@@ -1,49 +1,66 @@
-import jax.numpy as jnp
+from flax import struct
 import jax
+import jax.numpy as jnp
+import jax.random as rnd
 
 ACE, TEN, K, Q, J, NINE, EIGHT, SEVEN = 0,1,2,3,4,5,6,7
 to_trump = jnp.array([J,NINE,ACE,TEN,K,Q,EIGHT,SEVEN])
-J, NINE, ACE, TEN, K, Q,  EIGHT, SEVEN = 0,1,2,3,4,5,6,7
-to_color = jnp.array([ACE,TEN,K,Q,J, NINE, EIGHT,SEVEN])
 
 
-ALL_TRUMP = -1
-NO_TRUMP = -2
+key = rnd.key(0)
 
+
+
+# Special color indices
+ALL_TRUMP=-1
+NO_TRUMP=-2
+
+
+    
+@struct.dataclass
 class Hand:
-    def __init__(self, colors): # colors: np.array (4,8) Bool sorted sans at
-        # sorted decreasingly: Ace 10 K Q J 9 8 7
-        #                      0   1  2 3 4 5 6 7
-        self.hand = colors
-
-        self.trump = -1 # -1 = sans at, -2 = toutat
+    cards : jax.Array #hand: boolean matrix 4x8 ordered in the color order
+    trump : jnp.int32
 
 
-    def set_trump (self, color_idx):
-        """
-       Reorders the colors (if it was sans at, it becomes trump, and vice versa) 
-        """
-        self.hand[color_idx] = self.hand[color_idx][to_trump]
+#Reorders the colors (if it was sans at, it becomes trump, and vice versa) 
+@jax.jit
+def getTrump (hand : Hand, color) -> jax.Array:
+        return hand.cards[color][to_trump]
+
+@jax.jit
+def getColor (hand : Hand, color) -> jax.Array:
+        return hand.cards[color]
 
 
-    def unset_trump (self, color_idx):
-        self.hand[color_idx] = self.hand[color_idx][to_color]
+@jax.jit
+def isTrump(hand : Hand, color) -> jnp.bool:
+    return (hand.trump == color) | (hand.trump == ALL_TRUMP)
+
+@jax.jit
+def getCards (hand : Hand, color) -> jax.Array:
+    """
+        Returns the boolean vectors of cards corresponding to the specified color.
+        The cards are sorted in decreasing order, i.e. the index 0 correspond to ACE or JACK depending on the type of the color (TRUMP or COLOR).
+    """
+    return jax.lax.cond(
+                isTrump(hand, color),
+                lambda _: getTrump(hand, color),
+                lambda _: getColor(hand, color),
+                operand=None
+            )
+
+
+def showHand (hand : Hand) -> str :
+        lines = []
+        for color in range(4):
+            cards = getCards(hand, color)
+            lines.append(str(jnp.nonzero(cards)))
+
+        return "\n".join(lines)
 
 
 
-
-class Trick:
-    def __init__(self, player_index, first_card): #card = [color, rank]
-        color, rank = first_card
-
-        self.color = color
-        self.cards = [first_card]
-        self.best_card = first_card
-
-    def add (self, player_index, trump_color, new_card):
-        color, rank = new_card
-        
-
-
-
-            
+def random_hand():
+    hand = jnp.where(rnd.uniform(key,[4,8]) > 0.5, 1, 0)
+    return Hand(hand, 0)
