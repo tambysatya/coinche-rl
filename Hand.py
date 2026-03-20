@@ -15,8 +15,7 @@ key = rnd.key(0)
 ALL_TRUMP=-1
 NO_TRUMP=-2
 
-
-    
+   
 @struct.dataclass
 class Hand:
     cards : jax.Array #hand: boolean matrix 4x8 ordered in the color order
@@ -36,6 +35,11 @@ def getColor (hand : Hand, color) -> jax.Array:
 @jax.jit
 def isTrump(hand : Hand, color) -> jnp.bool:
     return (hand.trump == color) | (hand.trump == ALL_TRUMP)
+
+@jax.jit
+def canCut (hand:Hand) -> jnp.bool:
+    """ True if cutting is allowed """
+    return (hand.trump != ALL_TRUMP) & (hand.trump != NO_TRUMP)
 
 @jax.jit
 def getCards (hand : Hand, color) -> jax.Array:
