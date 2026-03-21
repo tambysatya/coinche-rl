@@ -16,19 +16,23 @@ class Card:
     rank : Rank
 
 @jax.jit
-def scalar_card_to_tensor(card : Card) -> TensorCard:
-    t = jnp.zeros([4,8], dtype=bool)
-    return t.at[card.suit, card.rank].set(True)
-
-@jax.jit
 def card_to_tensor(card : Card) -> TensorCard:
+    def scalar_card_to_tensor(card : Card) -> TensorCard:
+        t = jnp.zeros([4,8], dtype=bool)
+        return t.at[card.suit, card.rank].set(True)
+
+
     return jax.vmap(scalar_card_to_tensor)(card)
 
 
 @jax.jit
-def card_from_tensor(t : TensorCard) -> Card:
-    suit, rank = jnp.unravel_index(jnp.argmax(t), t.shape)
-    return Card(suit, rank)
+def card_from_tensor(ts : TensorCard) -> Card:
+    def scalar_card_from_tensor(t : TensorCard) -> Card:
+        idx = jnp.argmax(t)
+        suit, rank = idx // 8, idx % 8
+        return Card(suit, rank)
+    return jax.vmap(scalar_card_from_tensor)(ts)
+
 
 
 @jax.jit
