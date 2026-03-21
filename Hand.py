@@ -19,52 +19,54 @@ NO_TRUMP=-2
 @struct.dataclass
 class Hand:
     cards : jax.Array #hand: boolean matrix 4x8 ordered in the color order
-    trump : jnp.int32
+
+@struct.dataclass
+class Card:
+    color : jnp.int32
+    rank : jnp.int32
 
 
 #Reorders the colors (if it was sans at, it becomes trump, and vice versa) 
 @jax.jit
-def getTrump (hand : Hand, color) -> jax.Array:
-        return hand.cards[color][to_trump]
-
-@jax.jit
-def getColor (hand : Hand, color) -> jax.Array:
-        return hand.cards[color]
+def setTrump (hand : Hand, color) -> Hand:
+        row = hand.cards[color][to_trump]
+        newhand = hand.cards.at[color].set(row)
+        return Hand(newhand)
 
 
-@jax.jit
-def isTrump(hand : Hand, color) -> jnp.bool:
-    return (hand.trump == color) | (hand.trump == ALL_TRUMP)
-
-@jax.jit
-def canCut (hand:Hand) -> jnp.bool:
-    """ True if cutting is allowed """
-    return (hand.trump != ALL_TRUMP) & (hand.trump != NO_TRUMP)
-
-@jax.jit
-def getCards (hand : Hand, color) -> jax.Array:
+def getColorMask (color) -> jax.Array:
     """
-        Returns the boolean vectors of cards corresponding to the specified color.
-        The cards are sorted in decreasing order, i.e. the index 0 correspond to ACE or JACK depending on the type of the color (TRUMP or COLOR).
+        Keeps only the row corresponding to the specified color
     """
-    return jax.lax.cond(
-                isTrump(hand, color),
-                lambda _: getTrump(hand, color),
-                lambda _: getColor(hand, color),
-                operand=None
-            )
-
-
-def showHand (hand : Hand) -> str :
-        lines = []
-        for color in range(4):
-            cards = getCards(hand, color)
-            lines.append(str(jnp.nonzero(cards)))
-
-        return "\n".join(lines)
+    mask = jnp.ones([4,8])
+    color = jax.nn.one_hot(color, 4)
+    return color[:,None]*mask
 
 
 
-def random_hand():
-    hand = jnp.where(rnd.uniform(key,[4,8]) > 0.5, 1, 0)
-    return Hand(hand, 0)
+def betterOnColor (card: Card):
+   """
+        Mask that keeps only the cards of the color above the specified card
+   """
+   mask = jnp.zeros([4,8])
+   cardrank, cardcolor = card.rank, card.color
+   mask = mask.at[cardcolor,:cardrank].set(1)
+   return mask
+
+
+#predicates
+
+
+def hasColor(hand : Hand, color) -> jnp.bool:
+    return jnp.any(hand.cards[color])
+
+def canPlayAbove(hand : Hand, color, rank) -> jnp.bool:
+    return jnp.any(hand[color,:rank])
+
+
+
+def mkHand():
+    hand = rnd.uniform(key, [4,8])
+    hand = jnp.where(hand > 0.5, 1, 0)
+    hand = Hand(hand)
+    return setTrump(hand, 0)
