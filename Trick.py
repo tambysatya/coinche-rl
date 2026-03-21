@@ -1,5 +1,6 @@
 from flax import struct
 import jax
+import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rnd
 
@@ -17,8 +18,20 @@ class Trick:
 
 
 
-def play (trump : Suit, trick : Trick, player, card : Card):
-    pass
+def play (trump : Suit,
+          trick : Trick,
+          player,
+          card : Card) -> Trick:
+    """ Inserts a new card in the Trick """
+    same_best_p = is_better_p(trump, trick.best_card, card)
+    tensorcard = card_to_tensor(card)
+    cards = trick.cards.at[player].set(tensorcard)
+
+    return lax.cond(same_best_p,
+                    lambda _: Trick(trick.suit, trick.best_card, trick.best_team, cards),
+                    lambda _: Trick(trick.suit, card, player % 2, cards),
+                    None)
+
 
 def new_trick (player, first_card : Card):
     tensor = card_to_tensor(first_card)
