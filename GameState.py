@@ -10,6 +10,17 @@ from Trick import *
 
 
 
+@jax.jit
+def possible_moves (trump,
+                    trick : Trick,
+                    player,
+                    hand : Hand) -> Hand:
+    return lax.cond(
+                trick.suit == trump,
+                lambda _: possible_moves_on_trump_trick(trick, player, hand),
+                lambda _: possible_moves_on_color_trick(trump, trick, player, hand),
+            None)
+
 
 @jax.jit
 def possible_moves_on_trump_trick (trick : Trick, player, hand : Hand) -> Hand:
