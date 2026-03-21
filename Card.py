@@ -2,13 +2,13 @@ from flax import struct
 import jax
 import jax.numpy as jnp
 import jax.random as rnd
-from jaxtyping import Array, Bool
+from jaxtyping import Array, Bool, Int
 
   
 
-Suit = jnp.int32
-Rank = jnp.int32
-TensorCard = Bool [Array, "4 8"] #Vectorized representation of a card
+Suit = Int [Array, "B"]
+Rank = Int [Array, "B"]
+TensorCard = Bool [Array, "B 4 8"] #Vectorized representation of a card
 
 @struct.dataclass
 class Card:
@@ -16,9 +16,14 @@ class Card:
     rank : Rank
 
 @jax.jit
-def card_to_tensor(card : Card) -> TensorCard:
+def scalar_card_to_tensor(card : Card) -> TensorCard:
     t = jnp.zeros([4,8], dtype=bool)
     return t.at[card.suit, card.rank].set(True)
+
+@jax.jit
+def card_to_tensor(card : Card) -> TensorCard:
+    return jax.vmap(scalar_card_to_tensor)(card)
+
 
 @jax.jit
 def card_from_tensor(t : TensorCard) -> Card:
@@ -26,6 +31,7 @@ def card_from_tensor(t : TensorCard) -> Card:
     return Card(suit, rank)
 
 
+@jax.jit
 def is_better_p (trump : Suit, cardA : Card, cardB : Card) -> jnp.bool:
    """ True if cardA is better than cardB . Note: cardA is assumed to belong to the leading suit """ 
    same_color_p = cardA.suit == cardB.suit
