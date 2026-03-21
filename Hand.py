@@ -2,6 +2,9 @@ from flax import struct
 import jax
 import jax.numpy as jnp
 import jax.random as rnd
+from jaxtyping import Array, Bool
+
+from Card import *
 
 ACE, TEN, K, Q, J, NINE, EIGHT, SEVEN = 0,1,2,3,4,5,6,7
 to_trump = jnp.array([J,NINE,ACE,TEN,K,Q,EIGHT,SEVEN])
@@ -9,58 +12,33 @@ to_trump = jnp.array([J,NINE,ACE,TEN,K,Q,EIGHT,SEVEN])
 
 key = rnd.key(0)
 
-
-
-# Special color indices
-ALL_TRUMP=-1
-NO_TRUMP=-2
-
-
-    
-@struct.dataclass
-class Hand:
-    cards : jax.Array #hand: boolean matrix 4x8 ordered in the color order
-    trump : jnp.int32
-
-
-#Reorders the colors (if it was sans at, it becomes trump, and vice versa) 
-@jax.jit
-def getTrump (hand : Hand, color) -> jax.Array:
-        return hand.cards[color][to_trump]
+  
+Hand = Bool [Array, "4 8"]
 
 @jax.jit
-def getColor (hand : Hand, color) -> jax.Array:
-        return hand.cards[color]
+def set_trump (suit : Suit, hand : Hand) -> Hand:
+        """ Reorders the specified suit in the hand """
+        row = hand[suit][to_trump]
+        newhand = hand.at[suit].set(row)
+        return newhand
 
+
+#Accessors (subhands)
 
 @jax.jit
-def isTrump(hand : Hand, color) -> jnp.bool:
-    return (hand.trump == color) | (hand.trump == ALL_TRUMP)
+def sh_get_suit (suit : Suit, hand : Hand) -> Hand:
+    """ Returns the subhand of cards of the suit """
+    return hand*jax.nn.one_hot(suit,4)[:,None]
 
 @jax.jit
-def getCards (hand : Hand, color) -> jax.Array:
-    """
-        Returns the boolean vectors of cards corresponding to the specified color.
-        The cards are sorted in decreasing order, i.e. the index 0 correspond to ACE or JACK depending on the type of the color (TRUMP or COLOR).
-    """
-    return jax.lax.cond(
-                isTrump(hand, color),
-                lambda _: getTrump(hand, color),
-                lambda _: getColor(hand, color),
-                operand=None
-            )
+def sh_higher_in_suit (card : Card, hand : Hand) -> Hand:
+    """ Returns the subhand of cards better than card """
+    mask = jnp.zeros_like(hand, dtype=bool)
+    ranks = jnp.arange(8) < card.rank
+    return hand * mask.at[card.suit].set(ranks)
 
 
-def showHand (hand : Hand) -> str :
-        lines = []
-        for color in range(4):
-            cards = getCards(hand, color)
-            lines.append(str(jnp.nonzero(cards)))
+def randomHand ():
+    h = rnd.uniform(key, [4,8])
+    return jnp.bool(jnp.where(h > 0.5, 1, 0))
 
-        return "\n".join(lines)
-
-
-
-def random_hand():
-    hand = jnp.where(rnd.uniform(key,[4,8]) > 0.5, 1, 0)
-    return Hand(hand, 0)
