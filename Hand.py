@@ -54,3 +54,20 @@ def randomHands(keys):
     return jnp.bool(jnp.where(h > 0.5, 1, 0))
 
 
+def deal(keys):
+    """ Deals (multiple) times
+            Return size: [B, 4, 4, 8]: the hands of the 4 players for each batch
+    """
+    batch_size = keys.shape[0]
+    decks = jax.vmap(lambda k: jax.random.permutation(k, 32))(keys)
+
+    decks = decks.reshape([batch_size, 4,8])
+
+    def card_index_to_tensor(idx):
+        suit, rank = idx // 8, idx % 8
+        return card_to_tensor(Card(suit, rank))
+
+    decks = jax.vmap(card_index_to_tensor)(decks)
+    return decks
+
+
