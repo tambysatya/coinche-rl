@@ -41,7 +41,7 @@ def sh_higher_in_suit (cards : Card, hands : Hand) -> Hand:
         mask = jnp.zeros_like(hand, dtype=bool)
         ranks = jnp.arange(8) < card.rank
         return hand * mask.at[card.suit].set(ranks)
-    return jax.vmap(sh_higher_in_suit)(cards, hands)
+    return jax.vmap(scalar_sh_higher_in_suit)(cards, hands)
 
 
 def randomHand (key=key):

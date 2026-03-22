@@ -18,20 +18,27 @@ class Trick:
 
 
 
+@jax.jit
 def play (trumps : Suit,
           tricks : Trick,
           players,
           cards : Card) -> Trick:
-    def scalar_play (trump : Suit,trick : Trick,player,card : Card) -> Trick:
-        """ Inserts a new card in the Trick """
-        same_best_p = is_better_p(trump, trick.best_card, card)
-        tensorcard = card_to_tensor(card)
-        cards = trick.cards.at[player].set(tensorcard)
-        return lax.cond(same_best_p,
-                        lambda _: Trick(trick.suit, trick.best_card, trick.best_team, cards),
-                        lambda _: Trick(trick.suit, card, (player % 2).astype(jnp.bool), cards),
-                        None)
-    return jax.vmap(scalar_play)(trumps, tricks, players, cards)
+
+    same_best_p = is_better_p(trumps, tricks.best_card, cards)
+    tensorcards = card_to_tensor(cards)
+
+    def insert_card(player, tensorcard, trickcard):
+        return trickcard.at[player].set(tensorcard)
+
+    new_trick_cards = jax.vmap(insert_card)(players, tensorcards, tricks.cards)
+    new_best_teams = jnp.where(same_best_p, tricks.best_team, players % 2)
+
+    new_best_cards_suits = jnp.where(same_best_p, tricks.best_card.suit, cards.suit)
+    new_best_cards_ranks = jnp.where(same_best_p, tricks.best_card.rank, cards.rank)
+    new_best_cards = Card(new_best_cards_suits, new_best_cards_ranks)
+
+
+    return Trick(tricks.suit, new_best_cards, new_best_teams, new_trick_cards)
 
 
 @jax.jit
