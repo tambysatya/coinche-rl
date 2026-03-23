@@ -33,7 +33,9 @@ def reset(key, starting_players : Player) -> GameState :
     hands = deal(subkeys)
 
     trick_has_started_p = jnp.zeros(batch_size, dtype=bool)
-    dummy_tricks = new_trick(starting_players, Card(jnp.zeros(batch_size, dtype=int), jnp.zeros(batch_size, dtype=int)))
+    dummy_tricks = new_trick(starting_players,
+                             Card(jnp.zeros(batch_size, dtype=int),
+                             jnp.zeros(batch_size, dtype=int)))
 
-    return GameState(hands, dummy_tricks, starting_players, tr trick_has_started_p)
+    return GameState(hands, dummy_tricks, starting_players, trick_has_started_p)
 
