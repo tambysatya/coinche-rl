@@ -14,3 +14,6 @@ The ranks are assumed to be in decreasing order (common way to sort the cards). 
 `Hands` denotes the set of cards a player possesses. The *convenient representation* is simply a tensor of size $4 \times 8$, rows and columns are respectively denoting the suits and the ranks of the cards. The *tensor* reprezentation has size $32$ and is convenient representation which has been reshaped.
 
 ### Tricks
+
+`Tricks` denotes one step of the game. In each trick, each player plays sequentially, and the team having played the best card earns an amount of points correspondings to the sum of the values of each card in the trick. 
+Identifying which card is the best is a bit tricky (no pun involved). 
