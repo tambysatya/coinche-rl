@@ -16,8 +16,10 @@ def possible_moves (trump,
                     hand : Hand) -> Hand:
     trump_trick_p = trick.suit == trump
     #print (f"trump_trick_p={trump_trick_p}")
-    return (trump_trick_p * possible_moves_on_trump_trick(trick, player, hand) +
-           (1-trump_trick_p)*possible_moves_on_color_trick(trump, trick, player, hand))
+    possible_plays = jnp.where(trump_trick_p,
+                               possible_moves_on_trump_trick(trick, player, hand),
+                               possible_moves_on_color_trick(trump, trick, player, hand))
+    return jnp.where(trick.startedP, possible_plays, hand)
 
 def possible_moves_on_trump_trick (trick : Trick, player, hand : Hand) -> Hand:
     trump = trick.suit 
@@ -30,7 +32,9 @@ def possible_moves_on_trump_trick (trick : Trick, player, hand : Hand) -> Hand:
         #print (f"has_trumps_p={has_trumps_p} can_overtrump_p={can_overtrump_p}")
         return jnp.bool(can_overtrump_p*higher_trumps_in_hand + (1-can_overtrump_p)*trumps_in_hand)
 
-    return has_trumps_p*on_has_trump() + (1-has_trumps_p)*hand
+    return jnp.where(has_trumps_p,
+                     on_has_trump(),
+                     hand)
 
 def possible_moves_on_color_trick (trump : Suit, trick : Trick, player, hand : Hand) -> Hand:
     suit_in_hand = sh_get_suit(trick.suit, hand)
@@ -49,19 +53,21 @@ def possible_moves_on_color_trick (trump : Suit, trick : Trick, player, hand : H
 
        has_to_ovetrump_p = trick_cut_p & jnp.any(overtrumps, axis=(1,2))
        #print (f"trick_cut_p={trick_cut_p} has_trumps_p={has_trumps_p} has_suit_p={has_suit_p} has_to_ovetrump_p={has_to_ovetrump_p}")
-       return (has_to_ovetrump_p* overtrumps +
-               (1-has_to_ovetrump_p)*(
-                                      trick_cut_p * hand  # cannot play the suit and cannot overtrump => subway rule
-                                    + jnp.logical_not(trick_cut_p)*(has_trumps_p*trumps + (1-has_trumps_p)*hand))
-              )
+       return jnp.where (has_to_ovetrump_p,
+                         overtrumps,
+                         jnp.where(trick_cut_p,
+                                   hand, #cannot play the suit and cannot overtrump => subway rule
+                                   jnp.where(
+                                       has_trumps_p, #trick has not been cut and the hand contains trumps => must cut
+                                       trumps,
+                                       hand)))
     def has_no_suit():
        """ cannot play the corresponding suit:
            if your team win, you can play whatever""" 
        win_p = (player % 2) == (trick.best_player % 2)
-       #print ("win_p=",win_p)
-       return win_p*hand + (1-win_p)*not_best_team()
+       return jnp.where(win_p,hand,not_best_team())
     
-    return has_suit_p*suit_in_hand + (1-has_suit_p)*has_no_suit()
+    return jnp.where(has_suit_p, suit_in_hand, has_no_suit())
 
 
 
