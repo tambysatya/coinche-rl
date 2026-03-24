@@ -4,6 +4,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rnd
 
+from utils import *
 from Card import *
 from Hand import *
 
@@ -45,6 +46,9 @@ def play (trumps : Suit,
           players,
           cards : Card) -> Trick:
 
+    """ Inserts the card played by a player into the trick. Providing the trump suit is mandatory
+        to identifies which player is winning the trick so far"""
+
     best_card = tricks.best_card
     same_best_p = is_better_p(trumps, best_card, cards)
     startedP = tricks.startedP
@@ -67,6 +71,7 @@ def play (trumps : Suit,
 
 @jax.jit
 def new_trick(players) -> Trick:
+    """ Generates an empty trick """
     batch_size = players.shape[0]
     dummy_suit = jnp.zeros([batch_size], dtype=int)
     dummy_best_card = Card(jnp.zeros ([batch_size], dtype=int), jnp.zeros([batch_size], dtype=int))
@@ -77,6 +82,30 @@ def new_trick(players) -> Trick:
 
     
 
+def show_trick(trump, trick: Trick, index=0) -> str:
+    """ Displays a trick from a batch (default = 0)."""
+    suit = trick.suit[index]
+    cards = trick.cards[index] 
+    best_card = Card(trick.best_card.suit[index], trick.best_card.rank[index])
+    best_player = trick.best_player[index]
+    startedP = trick.startedP[index]
+
+    if not startedP:
+        return "[]"
+    ret = [f"[best={best_player}]"]
+    for i, card_ in enumerate(cards):
+        if jnp.any(card_):
+            card = card_from_tensor(card_.reshape(1,-1))
+            if card == best_card:
+                ret.append(f"{bcolors.BOLD}{bcolors.UNDERLINE}{show_card(trump, card, i)}{bcolors.ENDC}")
+            else:
+                ret.append(f"{show_card(trump, card, i)}")
+        else:
+            ret.append("?")
+    return " ".join(ret)
+        
+
+    
 
 def mk_setup():
     players = jnp.array([1])

@@ -80,6 +80,6 @@ def test_trick(trumps, cardA, cardB):
     players0 = jnp.zeros_like(cardA.suit) 
     players1 = jnp.ones_like(cardA.suit) 
     t = new_trick(players0)
-    t = play(trumps, t, players0, cardA)
-    t = play(trumps, t, players1, cardB)
+    t = play(trumps, t, 1+players0, cardA)
+    t = play(trumps, t, 1+players1, cardB)
     return t

@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import jax.random as rnd
 from jaxtyping import Array, Bool, Int
 
+from utils import *
   
 
 Suit = Int [Array, "B"]
@@ -28,7 +29,8 @@ def card_from_tensor(ts : TensorCard) -> Card:
     return Card(suits.argmax(axis=1), ranks.argmax(axis=-1))
 
 
-def show_card(is_trump : bool, card : Card, index=0) -> str:
+def show_card(trump, card : Card, index=0) -> str:
+    """ Displays the index^th card of the batch (blue if in trump suit) """
     suit = ["♠", "♥", "♦", "♣"]
     rank = ["A", "10", "K", "Q", "J", "9", "8", "7"]
     trump_rank = ["J", "9", "A", "10", "K", "Q", "8", "7"]
@@ -36,11 +38,11 @@ def show_card(is_trump : bool, card : Card, index=0) -> str:
     card_suit = card.suit[index].item()
     card_rank = card.rank[index].item()
 
-    if is_trump:
-        card_rank = trump_rank[card_rank]
+    if card_suit == trump:
+        card_rank = bcolors.OKBLUE + trump_rank[card_rank]
     else:
         card_rank = rank[card_rank]
-    return card_rank + suit[card_suit]
+    return card_rank + suit[card_suit] + bcolors.ENDC
 
 
 @jax.jit
