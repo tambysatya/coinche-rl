@@ -13,29 +13,15 @@ from Trick import *
 Player = Int [Array, "B"]
 
 @struct.dataclass
-class GameState:
-    hands : Bool [Array, "B 4 4 8"] # The Hands of the 4 players
-    current_tricks : Trick # One trick per state
-    current_players : Player # Who plays the next move
-
-    trick_has_started_p : Bool [Array, "B"] # False: the trick is empty (=> legalmoves should return the hand)
-
-
-
-
-   
+class TrickState:
     
+    next_player : Player
+    hands :: Bool [Array, "B 4 4 8"],
+    current_trick : Trick,
 
-@jax.jit
-def reset(key, starting_players : Player) -> GameState :
-    batch_size = starting_players.shape[0]
-    subkeys = rnd.split(key, batch_size)
-    hands = deal(subkeys)
-
-    trick_has_started_p = jnp.zeros(batch_size, dtype=bool)
-    dummy_tricks = new_trick(starting_players,
-                             Card(jnp.zeros(batch_size, dtype=int),
-                             jnp.zeros(batch_size, dtype=int)))
-
-    return GameState(hands, dummy_tricks, starting_players, trick_has_started_p)
-
+def trickstate_to_tensor(ts : TrickState):
+    return jnp.concatenate([
+                next_player,
+                hands.reshape(-1, 4*4*8),
+                trick_to_tensor(ts.current_trick)],
+                           axis=1)
