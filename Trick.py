@@ -8,47 +8,78 @@ from Card import *
 from Hand import *
 
 
+TensorTrick = Bool [Array, "B 66"] # 4 + 12 + 1 + (4*12) + 1
 
 @struct.dataclass
 class Trick:
-    suit : Suit  # Color (first color played)
-    best_card : Card # Color x Rank : bool
-    best_team : Bool [Array, "B"] # (0 for team 1, 1 for team 2)
-    cards : Bool [Array, "B 4 4 8"] # Player x TensorCard
+    suit : Suit  # Suit [INDEX] (first suit played)
+    best_card : Card # [B Cards]: best card played so far
+    best_player : Bool [Array, "B"] # best player so far (known as master player) : Int
+    cards : Bool [Array, "B 4 12"] # Player x TensorCard : [B x 4  x 12]
+    startedP : Bool [Array, "B"] #True if the trick has started
 
 
+def trick_from_tensor (tensor : TensorTrick) -> Trick:
+    suit = tensor[:,:4]
+    best_card = tensor[:, 4:16]
+    best_player = tensor[:, 16]
+    cards = tensor[:, 17:65]
+    startedP = tensor[:,65]
+    return Trick (suit.argmax(axis=-1),
+                  card_from_tensor(best_card),
+                  best_player,
+                  card_from_tensor(cards),
+                  startedP)
 
-@jax.jit
+
+def trick_to_tensor (trick: Trick) -> TensorTrick:
+    return jnp.concatenate([jax.nn.one_hot(trick.suit, 4),
+                           card_to_tensor(trick.best_card).reshape(-1,12),
+                           trick.best_player.reshape(-1,1),
+                           trick.cards.reshape(-1, 4*12),
+                           trick.startedP.reshape(-1,1)],
+                           axis=1)    
+
 def play (trumps : Suit,
           tricks : Trick,
           players,
           cards : Card) -> Trick:
 
-    same_best_p = is_better_p(trumps, tricks.best_card, cards)
+    best_card = tricks.best_card
+    same_best_p = is_better_p(trumps, best_card, cards)
+    startedP = tricks.startedP
     tensorcards = card_to_tensor(cards)
 
     def insert_card(player, tensorcard, trickcard):
         return trickcard.at[player].set(tensorcard)
 
     new_trick_cards = jax.vmap(insert_card)(players, tensorcards, tricks.cards)
-    new_best_teams = jnp.where(same_best_p, tricks.best_team, players % 2)
+    new_best_players = jnp.where(same_best_p, tricks.best_player, players)
 
-    new_best_cards_suits = jnp.where(same_best_p, tricks.best_card.suit, cards.suit)
-    new_best_cards_ranks = jnp.where(same_best_p, tricks.best_card.rank, cards.rank)
+    new_trick_suits = jnp.where(startedP, tricks.suit, cards.suit)
+    new_best_cards_suits = jnp.where(same_best_p, best_card.suit, cards.suit)
+    new_best_cards_ranks = jnp.where(same_best_p, best_card.rank, cards.rank)
     new_best_cards = Card(new_best_cards_suits, new_best_cards_ranks)
 
 
-    return Trick(tricks.suit, new_best_cards, new_best_teams, new_trick_cards)
+    return Trick(new_trick_suits, new_best_cards, new_best_players, new_trick_cards, jnp.ones_like(players, dtype=bool))
 
 
 @jax.jit
-def new_trick(players, first_cards : Card) -> Trick:
+def new_trick(players) -> Trick:
     batch_size = players.shape[0]
-    tensor = card_to_tensor(first_cards)
-    cards = jnp.zeros([batch_size, 4,4,8], dtype=bool)
+    dummy_suit = jnp.zeros([batch_size], dtype=int)
+    dummy_best_card = Card(jnp.zeros ([batch_size], dtype=int), jnp.zeros([batch_size], dtype=int))
+    cards = jnp.zeros([batch_size, 4,12], dtype=bool)
+    startedP = jnp.zeros_like(players, dtype=bool)
 
-    def initialize(cards, player, tensor, first_cards):
-        cards = cards.at[player].set(tensor)
-        return Trick (first_cards.suit, first_cards, players % 2, cards)
-    return jax.vmap(initialize)(cards, players, tensor, first_cards)
+    return Trick(dummy_suit, dummy_best_card, players, cards, startedP)
 
+    
+
+
+def mk_setup():
+    players = jnp.array([1])
+    cards = Card(jnp.array([2]), jnp.array([1]))
+    trumps = jnp.array([1])
+    return players, cards, trumps

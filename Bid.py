@@ -14,15 +14,18 @@ class Bid:
     coincheP : Bool [Array, "B"]
     overcoincheP : Bool [Array, "B"]
 
+@jax.jit
 def bid_to_tensor(bid : Bid) -> TensorBid:
     tensor = bid.bid.reshape(-1, 60)
     return jnp.concatenate([tensor, bid.coincheP, bid.overcoincheP], axis=1)
 
+@jax.jit
 def bid_from_tensor(tensor: TensorBid) -> Bid:
     bid, coincheP, overcoincheP = tensor[:, :60], tensor[:, 60], tensor[:, 61]
     return Bid(bid.reshape(-1, 6, 10), coincheP, overcoincheP)
 
 
+@jax.jit
 def possible_bid_mask (tensor : TensorBid) -> TensorBid:
     """ Generates the possible bidding actions (i.e. coincheP = 1 => you are allowed to coinche)"""
     batch_size = tensor.shape[0]
