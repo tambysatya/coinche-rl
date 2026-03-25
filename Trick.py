@@ -9,34 +9,20 @@ from Card import *
 from Hand import *
 
 
-TensorTrick = Bool [Array, "B 66"] # 4 + 12 + 1 + (4*12) + 1
+TensorTrick = Bool [Array, "B 69"] # 4 + 12 + 4 + (4*12) + 1
 
 @struct.dataclass
 class Trick:
     suit : Suit  # Suit [INDEX] (first suit played)
     best_card : Card # [B Cards]: best card played so far
-    best_player : Bool [Array, "B"] # best player so far (known as master player) : Int
+    best_player : Int [Array, "B"] # best player so far (known as master player) : Int
     cards : Bool [Array, "B 4 12"] # Player x TensorCard : [B x 4  x 12]
     startedP : Bool [Array, "B"] #True if the trick has started
-
-
-def trick_from_tensor (tensor : TensorTrick) -> Trick:
-    suit = tensor[:,:4]
-    best_card = tensor[:, 4:16]
-    best_player = tensor[:, 16]
-    cards = tensor[:, 17:65]
-    startedP = tensor[:,65]
-    return Trick (suit.argmax(axis=-1),
-                  card_from_tensor(best_card),
-                  best_player,
-                  card_from_tensor(cards),
-                  startedP)
-
 
 def trick_to_tensor (trick: Trick) -> TensorTrick:
     return jnp.concatenate([jax.nn.one_hot(trick.suit, 4),
                            card_to_tensor(trick.best_card).reshape(-1,12),
-                           trick.best_player.reshape(-1,1),
+                           jax.nn.one_hot(trick.best_player,4),
                            trick.cards.reshape(-1, 4*12),
                            trick.startedP.reshape(-1,1)],
                            axis=1)    

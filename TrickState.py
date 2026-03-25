@@ -4,6 +4,7 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rnd
+from jax.experimental import checkify
 
 from Card import *
 from Hand import *
@@ -23,12 +24,29 @@ class TrickState:
     trick_size : Int [Array, "B"] # nb of cards played
 
 def trickstate_to_tensor(ts : TrickState):
+    """ Encoding to tensor: the next player and the trick_size are one-hot encoded """
     return jnp.concatenate([
-                ts.next_player,
+                jax.nn.one_hot(ts.next_player,4),
                 ts.hands.reshape(-1, 4*4*8),
-                trick_to_tensor(ts.current_trick)],
-                ts.trick_size,
+                trick_to_tensor(ts.current_trick),
+                ts.trick_value.reshape(-1,1),
+                jax.nn.one_hot(ts.trick_size, 4)],
                            axis=1)
+
+def trickstate_obs_tensor (ts : TrickState):
+    """ Returns the partial observation from a player (with only his hand)"""
+
+    def extract_hand (player, hands):
+        return hands[player]
+
+    return jnp.concatenate ([
+                jax.nn.one_hot(ts.next_player,4),
+                jax.vmap(extract_hand)(ts.next_player, ts.hands).reshape(-1, 4*8),
+                trick_to_tensor(ts.current_trick),
+                ts.trick_value.reshape(-1,1),
+                jax.nn.one_hot(ts.trick_size, 4)],
+                             axis=1)
+    
 
 def trickstate_initialize(first_players : Player, hands : Bool [Array, "B 4 4 8"]) -> TrickState:
     return TrickState(
@@ -47,21 +65,19 @@ def trickstate_actions (trump : Suit, trickstate : TrickState) -> Hand:
     hands = jax.vmap (lambda hand, p : hand[p])(trickstate.hands, player) 
     trick = trickstate.current_trick
 
-    print (hands, hands.shape)
 
     return possible_moves(trump, trick, player, hands)
 
-
 # n_obs, n_state, reward, done = env.step (key_step, state, action, env_params)
-
+@jax.jit
 def trickstate_step (trump: Suit, trickstate : TrickState, card: Card) -> TrickState :
 
     def remove_card (player, card, hand):
-        return hand[player].at[card.suit, card.rank].set(False)
+        return hand.at[player, card.suit, card.rank].set(False)
 
 
     new_next_player = (trickstate.next_player + 1) % 4
-    new_hand = jnp.vmap(remove_card)(trickstate.next_player, card, trickstate.hands)
+    new_hand = jax.vmap(remove_card)(trickstate.next_player, card, trickstate.hands)
     new_trick = play(trump, 
                      trickstate.current_trick,
                      trickstate.next_player,
@@ -69,7 +85,44 @@ def trickstate_step (trump: Suit, trickstate : TrickState, card: Card) -> TrickS
     new_trick_value = trickstate.trick_value + card_value(trump, card)
     new_trick_size = trickstate.trick_size + 1
 
+    err, _ = player_has_card(card, trickstate)
+    err.throw()
+
+    err, _ = is_move_allowed(trump, card, trickstate)
+    err.throw()
+
     return TrickState(new_next_player, new_hand, new_trick, new_trick_value, new_trick_size)
 
+def trickstate_done(trickstate : TrickState) -> Bool [Array, "B"]:
+    return trickstate.trick_size == 4
     
 # obs, state = env.reset(key)
+
+
+# Checkers 
+
+@jax.jit
+def player_has_card (card : Card, trickstate : TrickState):
+    def scalar_player_has_card(player, card, hand):
+        ret = hand[player]* card_to_subhand(card)
+        checkify.check(jnp.any(ret), f"Invalid move: the player does not have this card (not in hand)")
+        return ret
+    @checkify.checkify
+    def check ():
+        ret = jax.vmap(scalar_player_has_card)(trickstate.next_player, card, trickstate.hands)
+        return ret
+    return check()
+
+@jax.jit
+@checkify.checkify
+def is_move_allowed(trump: Suit, card : Card, trickstate : TrickState):
+    allowed_moves = trickstate_actions(trump, trickstate)
+    card = card_to_subhand(card)
+    ret = jax.vmap(lambda c, allowed_move: jnp.any(c*allowed_move))(card, allowed_moves)
+    checkify.check(jnp.all(ret), "Invalid move: the player is not allowed to play this card (not a legal move)")
+    return ret
+
+
+    
+
+

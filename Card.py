@@ -31,6 +31,11 @@ def card_from_tensor(ts : TensorCard) -> Card:
     suits, ranks = ts[:, :4], ts[:, 4:]
     return Card(suits.argmax(axis=1), ranks.argmax(axis=-1))
 
+@jax.jit
+def card_to_subhand (card : Card) -> Bool [Array, "B 4 8"]:
+    idx = card.suit*8 + card.rank
+    return jax.nn.one_hot(idx,32).reshape(-1, 4, 8)
+
 
 def show_card(trump, card : Card, index=0) -> str:
     """ Displays the index^th card of the batch (blue if in trump suit) """
