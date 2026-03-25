@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import jax.random as rnd
 
 from utils import *
-from Card import *
-from Hand import *
+from coinche.Card import *
+from coinche.Hand import *
 
 
 TensorTrick = Bool [Array, "B 69"] # 4 + 12 + 4 + (4*12) + 1

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as rnd
 from jaxtyping import Array, Bool
 
-from Card import *
+from coinche.Card import *
 
 ACE, TEN, K, Q, J, NINE, EIGHT, SEVEN = 0,1,2,3,4,5,6,7
 to_trump = jnp.array([J,NINE,ACE,TEN,K,Q,EIGHT,SEVEN])

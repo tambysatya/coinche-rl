@@ -4,9 +4,9 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rnd
 
-from Card import *
-from Hand import *
-from Trick import *
+from coinche.Card import *
+from coinche.Hand import *
+from coinche.Trick import *
 
 
 # TODO: encode ALL_TRUMPS (trivial) and NO_TRUMP

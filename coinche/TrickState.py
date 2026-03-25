@@ -6,10 +6,10 @@ import jax.numpy as jnp
 import jax.random as rnd
 from jax.experimental import checkify
 
-from Card import *
-from Hand import *
-from Trick import *
-from LegalMoves import *
+from coinche.Card import *
+from coinche.Hand import *
+from coinche.Trick import *
+from coinche.LegalMoves import *
 
 
 Player = Int [Array, "B"]
