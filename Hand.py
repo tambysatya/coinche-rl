@@ -58,16 +58,19 @@ def deal(keys):
     """ Deals (multiple) times
             Return size: [B, 4, 4, 8]: the hands of the 4 players for each batch
     """
-    batch_size = keys.shape[0]
-    decks = jax.vmap(lambda k: jax.random.permutation(k, 32))(keys)
 
-    decks = decks.reshape([batch_size, 4,8])
+    def card_index_to_subhand(idx):
+        """ Transforms an index into a 1x32 tensor """
+        card = jax.nn.one_hot(idx, 32, dtype=bool)
+        return card
 
-    def card_index_to_tensor(idx):
-        suit, rank = idx // 8, idx % 8
-        return card_to_tensor(Card(suit, rank))
+    def scalar_deck(key):
+        decks = jax.random.permutation(key, 32)
+        decks = jax.vmap(card_index_to_subhand)(decks) # [1,32,4,8]
+        decks = decks.reshape([4,8,4,8])
+        return decks.any(axis=1) # 4,4,8
 
-    decks = jax.vmap(card_index_to_tensor)(decks)
+    decks = jax.vmap(scalar_deck)(keys)
     return decks
 
 

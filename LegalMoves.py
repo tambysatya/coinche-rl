@@ -9,6 +9,7 @@ from Hand import *
 from Trick import *
 
 
+# TODO: encode ALL_TRUMPS (trivial) and NO_TRUMP
 
 def possible_moves (trump,
                     trick : Trick,

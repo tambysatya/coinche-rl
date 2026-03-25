@@ -12,6 +12,9 @@ Rank = Int [Array, "B"]
 TensorSuit = Bool [Array, "B 4"] # One-hot encoding of a suit
 TensorCard = Bool [Array, "B 12"] #Vectorized representation of a card SUIT(4) + RANK (8)
 
+suit_values = jnp.array([11,10,4,3,2,0,0,0])
+trump_values = jnp.array([20,14,11,10,4,3,2,0,0])
+
 @struct.dataclass
 class Card:
     suit : Suit # [B Int]
@@ -44,6 +47,10 @@ def show_card(trump, card : Card, index=0) -> str:
         card_rank = rank[card_rank]
     return card_rank + suit[card_suit] + bcolors.ENDC
 
+def card_value (trump : Suit, card : Card) -> str:
+    return jnp.where(trump == card.suit,
+                     trump_values[card.rank],
+                     suit_values[card.rank])
 
 @jax.jit
 def is_better_p (trump : Suit, cardA : Card, cardB : Card) -> jnp.bool:
