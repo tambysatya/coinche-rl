@@ -19,7 +19,7 @@ def mk_policy_step (model):
     def policy_step (trump : Suit, trickstate : TrickState, params, keys) -> Card : 
         """ Sample an action from a policy """
         policy_network = nnx.merge(graphdef, params)
-        logits = policy_network(trickstate_obs_tensor(trickstate))
+        logits = jax.vmap(policy_network)(trickstate_obs_tensor(trickstate)).reshape([-1, 4,8])
         mask = trickstate_actions(trump, trickstate)
         probs = jnp.where(mask, logits, -jnp.inf)
         action = jax.vmap(jax.random.categorical)(keys, probs.reshape(-1,32))

@@ -35,6 +35,6 @@ class UniformPolicy (nnx.Module):
         return
     def __call__(self, obs):
         batch_size = obs.shape[0]
-        return jnp.ones([batch_size, 4, 8])
+        return jnp.ones([1,32])
 
 
