@@ -13,7 +13,7 @@ import optax
 seed = rnd.key(0)
 seed, mdlseed = rnd.split(seed)
 policy_mdl = MLP(in_feats=110, hid_feats=100, out_feats=4*8, rngs=nnx.Rngs(mdlseed), n_hid=1)
-value_mdl = MLP(in_feats=110, hid_feats=100, out_feats=1, rngs=nnx.Rngs(mdlseed), n_hid=1)
+value_mdl = MLP(in_feats=110, hid_feats=10, out_feats=1, rngs=nnx.Rngs(mdlseed), n_hid=1)
 value_graphdef, _ = nnx.split(value_mdl)
 policy_graphdef, _ = nnx.split(policy_mdl)
 #mdl = UniformPolicy()
@@ -49,12 +49,12 @@ def generate_examples(rollout_episode_fun, params, key, batch_size=2):
 @jax.jit
 def value_function_MC_loss(params, obs, reward):
     model = nnx.merge(value_graphdef, params)
-    pred = model(obs)
-    return jnp.sum((pred - reward)**2)
+    pred = jax.vmap(model)(obs)
+    return ((pred - reward)**2).mean()
 
     
 
-def training_loop(initial_params, dataset, lr=0.01, n_epoch=10):
+def training_loop(initial_params, dataset, lr=0.1, n_epoch=10):
     params = initial_params
     optimizer = optax.adam(lr)
     opt_state = optimizer.init(params)
@@ -62,23 +62,40 @@ def training_loop(initial_params, dataset, lr=0.01, n_epoch=10):
     obs, reward = dataset
 
     initial_loss = value_function_MC_loss(params, obs, reward)
-    
-    for _ in tqdm(range(n_epoch)):
+
+    @jax.jit
+    def step(params, opt_state):
         value, grads = jax.value_and_grad(value_function_MC_loss)(params, obs, reward)
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
+        return params, opt_state, value
 
+
+
+    
+    for _ in tqdm(range(n_epoch)):
+        params, opt_state, value = step(params, opt_state)
+
+    return params, initial_loss, value
+
+
+def test_step(key=seed, batch_size=32, value_params=None):
+    rollout_episode = mk_rollout_episode(policy_mdl)
+    policy_params = nnx.state(policy_mdl)
+    if value_params == None:
+        value_params = nnx.state(value_mdl)
+    dataset = generate_examples(rollout_episode, policy_params, key, batch_size=batch_size)
+    final_params, initial_loss, value = training_loop(value_params, dataset)
     print (f"initial={initial_loss} final={value}")
+    return final_params
+
+def test_loop (key=seed, batch_size=32, nb_epoch=100):
+    key, subkey = rnd.split(key)
+    params = test_step(key=key, batch_size=batch_size)
+    for i in range(nb_epoch):
+        params = test_step(key=key, batch_size=batch_size, value_params=params)
     return params
 
-
-def test(key=seed, batch_size=32):
-    rollout_episode = mk_rollout_episode(policy_mdl)
-    policy_params, value_params = nnx.state(policy_mdl), nnx.state(value_mdl)
-    dataset = generate_examples(rollout_episode, policy_params, key, batch_size=batch_size)
-    return dataset
-    final_params = training_loop(value_params, dataset)
-    return final_params
 
 
 def compute_stats(n=100, batch_size=2):
