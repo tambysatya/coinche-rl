@@ -7,11 +7,15 @@ import jax.tree_util as jtu
 from time import time
 from tqdm import tqdm
 from functools import partial
+import optax
 
 
 seed = rnd.key(0)
 seed, mdlseed = rnd.split(seed)
-mdl = MLP(in_feats=110, hid_feats=100, out_feats=4*8, rngs=nnx.Rngs(mdlseed), n_hid=1)
+policy_mdl = MLP(in_feats=110, hid_feats=100, out_feats=4*8, rngs=nnx.Rngs(mdlseed), n_hid=1)
+value_mdl = MLP(in_feats=110, hid_feats=100, out_feats=1, rngs=nnx.Rngs(mdlseed), n_hid=1)
+value_graphdef, _ = nnx.split(value_mdl)
+policy_graphdef, _ = nnx.split(policy_mdl)
 #mdl = UniformPolicy()
 
 
@@ -42,15 +46,39 @@ def generate_examples(rollout_episode_fun, params, key, batch_size=2):
     obs = trickstate_obs_tensor(trajectories)
     return obs, reward
     
+@jax.jit
+def value_function_MC_loss(params, obs, reward):
+    model = nnx.merge(value_graphdef, params)
+    pred = model(obs)
+    return jnp.sum((pred - reward)**2)
+
+    
+
+def training_loop(initial_params, dataset, lr=0.01, n_epoch=10):
+    params = initial_params
+    optimizer = optax.adam(lr)
+    opt_state = optimizer.init(params)
+
+    obs, reward = dataset
+
+    initial_loss = value_function_MC_loss(params, obs, reward)
+    
+    for _ in tqdm(range(n_epoch)):
+        value, grads = jax.value_and_grad(value_function_MC_loss)(params, obs, reward)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+
+    print (f"initial={initial_loss} final={value}")
+    return params
 
 
-
-
-def test(key=seed, batch_size=2):
-    rollout_episode = mk_rollout_episode(mdl)
-    initial_params = nnx.state(mdl)
-    ret = generate_examples(rollout_episode, initial_params, key, batch_size=batch_size)
-    return ret
+def test(key=seed, batch_size=32):
+    rollout_episode = mk_rollout_episode(policy_mdl)
+    policy_params, value_params = nnx.state(policy_mdl), nnx.state(value_mdl)
+    dataset = generate_examples(rollout_episode, policy_params, key, batch_size=batch_size)
+    return dataset
+    final_params = training_loop(value_params, dataset)
+    return final_params
 
 
 def compute_stats(n=100, batch_size=2):
