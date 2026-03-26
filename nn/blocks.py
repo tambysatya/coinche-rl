@@ -1,6 +1,8 @@
 
 from flax import nnx
 
+import jax.numpy as jnp
+
 
 
 class MLP (nnx.Module):
@@ -27,5 +29,12 @@ class MLP (nnx.Module):
         return y
 
 
+
+class UniformPolicy (nnx.Module):
+    def __init__(self):
+        return
+    def __call__(self, obs):
+        batch_size = obs.shape[0]
+        return jnp.ones([batch_size, 4, 8])
 
 
