@@ -52,6 +52,7 @@ def show_card(trump, card : Card, index=0) -> str:
         card_rank = rank[card_rank]
     return card_rank + suit[card_suit] + bcolors.ENDC
 
+@jax.jit
 def card_value (trump : Suit, card : Card) -> str:
     return jnp.where(trump == card.suit,
                      trump_values[card.rank],

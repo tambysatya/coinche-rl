@@ -19,6 +19,7 @@ class Trick:
     cards : Bool [Array, "B 4 12"] # Player x TensorCard : [B x 4  x 12]
     startedP : Bool [Array, "B"] #True if the trick has started
 
+@jax.jit
 def trick_to_tensor (trick: Trick) -> TensorTrick:
     return jnp.concatenate([jax.nn.one_hot(trick.suit, 4),
                            card_to_tensor(trick.best_card).reshape(-1,12),
@@ -27,6 +28,7 @@ def trick_to_tensor (trick: Trick) -> TensorTrick:
                            trick.startedP.reshape(-1,1)],
                            axis=1)    
 
+@jax.jit
 def play (trumps : Suit,
           tricks : Trick,
           players,

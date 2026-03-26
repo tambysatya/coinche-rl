@@ -10,6 +10,7 @@ from coinche.Card import *
 from coinche.Hand import *
 from coinche.Trick import *
 from coinche.LegalMoves import *
+from functools import partial
 
 
 Player = Int [Array, "B"]
@@ -23,6 +24,7 @@ class TrickState:
     trick_value : Int [Array, "B"] # current value of the trick
     trick_size : Int [Array, "B"] # nb of cards played
 
+@jax.jit
 def trickstate_to_tensor(ts : TrickState):
     """ Encoding to tensor: the next player and the trick_size are one-hot encoded """
     return jnp.concatenate([
@@ -33,6 +35,7 @@ def trickstate_to_tensor(ts : TrickState):
                 jax.nn.one_hot(ts.trick_size, 4)],
                            axis=1)
 
+@jax.jit
 def trickstate_obs_tensor (ts : TrickState):
     """ Returns the partial observation from a player (with only his hand)"""
 
@@ -48,6 +51,7 @@ def trickstate_obs_tensor (ts : TrickState):
                              axis=1)
     
 
+@jax.jit
 def trickstate_initialize(first_players : Player, hands : Bool [Array, "B 4 4 8"]) -> TrickState:
     return TrickState(
                 first_players,
@@ -59,6 +63,7 @@ def trickstate_initialize(first_players : Player, hands : Bool [Array, "B 4 4 8"
 
 
 # action = env.action_space()
+@jax.jit
 def trickstate_actions (trump : Suit, trickstate : TrickState) -> Hand:
     player = trickstate.next_player
     #hands = trickstate.hands[player]
@@ -69,8 +74,8 @@ def trickstate_actions (trump : Suit, trickstate : TrickState) -> Hand:
     return possible_moves(trump, trick, player, hands)
 
 # n_obs, n_state, reward, done = env.step (key_step, state, action, env_params)
-@jax.jit
-def trickstate_step (trump: Suit, trickstate : TrickState, card: Card) -> TrickState :
+@partial(jax.jit, static_argnames=["enable_checks"])
+def trickstate_step (trump: Suit, trickstate : TrickState, card: Card, enable_checks=False) -> TrickState :
 
     def remove_card (player, card, hand):
         return hand.at[player, card.suit, card.rank].set(False)
@@ -85,14 +90,16 @@ def trickstate_step (trump: Suit, trickstate : TrickState, card: Card) -> TrickS
     new_trick_value = trickstate.trick_value + card_value(trump, card)
     new_trick_size = trickstate.trick_size + 1
 
-    err, _ = player_has_card(card, trickstate)
-    err.throw()
+    if enable_checks:
+        err, _ = player_has_card(card, trickstate)
+        err.throw()
 
-    err, _ = is_move_allowed(trump, card, trickstate)
-    err.throw()
+        err, _ = is_move_allowed(trump, card, trickstate)
+        err.throw()
 
     return TrickState(new_next_player, new_hand, new_trick, new_trick_value, new_trick_size)
 
+@jax.jit
 def trickstate_done(trickstate : TrickState) -> Bool [Array, "B"]:
     return trickstate.trick_size == 4
     
