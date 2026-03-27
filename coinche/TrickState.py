@@ -12,9 +12,9 @@ from coinche.Trick import *
 from coinche.LegalMoves import *
 from functools import partial
 
+""" This modules describes an environment for simulating one complete trick (i.e. the 4 players have selected a card). """
 
 Player = Int [Array, "B"]
-
 @struct.dataclass
 class TrickState:
     """ Local environment describing how to play a trick """ 
