@@ -19,12 +19,12 @@ policy_graphdef, _ = nnx.split(policy_mdl)
 #mdl = UniformPolicy()
 
 
-@partial(jax.jit, static_argnames= ['rollout_episode_fun', 'batch_size'])
-def generate_examples(rollout_episode_fun, params, key, batch_size=2):
-    """ Generates batch_size examples [state, value] """
+@partial(jax.jit, static_argnames= ['rollout_episode_fun', 'n_examples'])
+def generate_examples(rollout_episode_fun, params, key, n_examples=2):
+    """ Generates n_examples examples [state, value] """
     key, subkey = rnd.split(key)
-    initial_player, trumps = jnp.zeros(batch_size, dtype=int), jnp.zeros(batch_size, dtype=int) #without loss of generality here
-    initial_hands = deal(rnd.split(subkey, batch_size))
+    initial_player, trumps = jnp.zeros(n_examples, dtype=int), jnp.zeros(n_examples, dtype=int) #without loss of generality here
+    initial_hands = deal(rnd.split(subkey, n_examples))
     initial_state = trickstate_initialize(initial_player, initial_hands) 
 
 
@@ -54,46 +54,58 @@ def value_function_MC_loss(params, obs, reward):
 
     
 
-def training_loop(initial_params, dataset, lr=0.1, n_epoch=10):
+def training_loop(initial_params, dataset, batch_size, lr=0.1, n_epoch=10):
     params = initial_params
     optimizer = optax.adam(lr)
     opt_state = optimizer.init(params)
 
-    obs, reward = dataset
 
-    initial_loss = value_function_MC_loss(params, obs, reward)
+
+    batched_obs, batched_reward = mk_minibatches(dataset[0], batch_size), mk_minibatches(dataset[1], batch_size)
+
 
     @jax.jit
-    def step(params, opt_state):
+    def step(carry, i):
+        params, opt_state = carry
+        obs, reward = batched_obs[i], batched_reward[i]
+
         value, grads = jax.value_and_grad(value_function_MC_loss)(params, obs, reward)
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
-        return params, opt_state, value
+        return (params, opt_state), value
 
+    
+    @jax.jit
+    def train_epoch(params, opt_state):
+        return jax.lax.scan( step,
+                             (params, opt_state),
+                             jnp.arange(batched_obs.shape[0])
+                            )
 
 
     
-    for _ in tqdm(range(n_epoch)):
-        params, opt_state, value = step(params, opt_state)
+    for i in tqdm(range(n_epoch)):
+        (params, opt_state), value = train_epoch(params, opt_state)
+        print (f"\t [epoch {i}] Loss={value.mean()}")
 
-    return params, initial_loss, value
+    return params, value.mean()
 
 
-def test_step(key=seed, batch_size=32, value_params=None):
+def test_step(key=seed, n_examples=32, batch_size=32, value_params=None):
     rollout_episode = mk_rollout_episode(policy_mdl)
     policy_params = nnx.state(policy_mdl)
     if value_params == None:
         value_params = nnx.state(value_mdl)
-    dataset = generate_examples(rollout_episode, policy_params, key, batch_size=batch_size)
-    final_params, initial_loss, value = training_loop(value_params, dataset)
-    print (f"initial={initial_loss} final={value}")
+    dataset = generate_examples(rollout_episode, policy_params, key, n_examples=n_examples)
+    final_params, value = training_loop(value_params, dataset, batch_size)
+    print (f"final={value}")
     return final_params
 
-def test_loop (key=seed, batch_size=32, nb_epoch=100):
+def test_loop (key=seed, n_examples=32, batch_size=32, nb_epoch=100):
     key, subkey = rnd.split(key)
     params = test_step(key=key, batch_size=batch_size)
     for i in range(nb_epoch):
-        params = test_step(key=key, batch_size=batch_size, value_params=params)
+        params = test_step(key=key, n_examples=32, batch_size=batch_size, value_params=params)
     return params
 
 
