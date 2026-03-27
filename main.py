@@ -52,7 +52,26 @@ def value_function_MC_loss(params, obs, reward):
     pred = jax.vmap(model)(obs)
     return ((pred - reward)**2).mean()
 
-    
+@partial(jax.jit, static_argnames=['optimizer'])
+def step(optimizer, batched_dataset, carry, i):
+    params, opt_state = carry
+    obs, reward = batched_dataset[0][i], batched_dataset[1][i]
+
+    value, grads = jax.value_and_grad(value_function_MC_loss)(params, obs, reward)
+    updates, opt_state = optimizer.update(grads, opt_state)
+    params = optax.apply_updates(params, updates)
+    return (params, opt_state), value
+
+
+@partial(jax.jit, static_argnames=['optimizer'])
+def train_epoch(optimizer, batched_dataset, params, opt_state):
+    return jax.lax.scan( partial(step, optimizer, batched_dataset),
+                         (params, opt_state),
+                         jnp.arange(batched_dataset[0].shape[0])
+                        )
+
+
+
 
 def training_loop(initial_params, dataset, batch_size, lr=0.1, n_epoch=10):
     params = initial_params
@@ -64,28 +83,10 @@ def training_loop(initial_params, dataset, batch_size, lr=0.1, n_epoch=10):
     batched_obs, batched_reward = mk_minibatches(dataset[0], batch_size), mk_minibatches(dataset[1], batch_size)
 
 
-    @jax.jit
-    def step(carry, i):
-        params, opt_state = carry
-        obs, reward = batched_obs[i], batched_reward[i]
-
-        value, grads = jax.value_and_grad(value_function_MC_loss)(params, obs, reward)
-        updates, opt_state = optimizer.update(grads, opt_state)
-        params = optax.apply_updates(params, updates)
-        return (params, opt_state), value
-
-    
-    @jax.jit
-    def train_epoch(params, opt_state):
-        return jax.lax.scan( step,
-                             (params, opt_state),
-                             jnp.arange(batched_obs.shape[0])
-                            )
-
 
     
     for i in tqdm(range(n_epoch)):
-        (params, opt_state), value = train_epoch(params, opt_state)
+        (params, opt_state), value = train_epoch(optimizer, (batched_obs, batched_reward), params, opt_state)
         print (f"\t [epoch {i}] Loss={value.mean()}")
 
     return params, value.mean()
@@ -103,9 +104,9 @@ def test_step(key=seed, n_examples=32, batch_size=32, value_params=None):
 
 def test_loop (key=seed, n_examples=32, batch_size=32, nb_epoch=100):
     key, subkey = rnd.split(key)
-    params = test_step(key=key, batch_size=batch_size)
+    params = nnx.state(value_mdl)
     for i in range(nb_epoch):
-        params = test_step(key=key, n_examples=32, batch_size=batch_size, value_params=params)
+        params = test_step(key=key, n_examples=n_examples, batch_size=batch_size, value_params=params)
     return params
 
 
