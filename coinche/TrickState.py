@@ -50,7 +50,10 @@ def trickstate_obs_tensor (ts : TrickState):
                 jax.nn.one_hot(ts.trick_size, 4)],
                              axis=1)
     
-
+def trickstate_from_tensor (tensor) -> TrickState:
+    player = tensor[:, :4] #one_hot
+    hands = tensor [:, 4:4*4*8]
+    
 @jax.jit
 def trickstate_initialize(first_players : Player, hands : Bool [Array, "B 4 4 8"]) -> TrickState:
     return TrickState(
