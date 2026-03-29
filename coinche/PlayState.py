@@ -74,7 +74,7 @@ def  playstate_next_trickstate (playstate : PlayState, finished_trick : TrickSta
     trick_score = finished_trick.trick_value[:,None]
     trick_score_win = jnp.concatenate([trick_score, jnp.zeros_like(trick_score, dtype=int)], axis=1) # team [0,2] wins
     trick_score_lose = jnp.concatenate([jnp.zeros_like(trick_score, dtype=int), trick_score], axis=1) # team [1,3] wins
-    cond_win = 1+(winners%2)
+    cond_win = winners%2 == 0 
     trick_score = cond_win*trick_score_win + (1-cond_win)*trick_score_lose
 
     return PlayState(playstate.bid,
