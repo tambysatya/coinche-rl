@@ -1,5 +1,6 @@
 
 from agents.trick_policy import *
+from agents.play_policy import *
 from nn.blocks import *
 import jax.random as rnd
 

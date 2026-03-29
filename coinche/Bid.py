@@ -24,6 +24,10 @@ def bid_from_tensor(tensor: TensorBid) -> Bid:
     bid, coincheP, overcoincheP = tensor[:, :60], tensor[:, 60], tensor[:, 61]
     return Bid(bid.reshape(-1, 6, 10), coincheP, overcoincheP)
 
+@jax.jit
+def trump_from_bid(bid : Bid):
+    return bid.bid.sum(axis=1).argmax(axis=-1)
+
 
 @jax.jit
 def possible_bid_mask (tensor : TensorBid) -> TensorBid:
