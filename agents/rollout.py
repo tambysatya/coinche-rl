@@ -23,7 +23,7 @@ def mk_step(policy_model):
 
     def step (params, hidden_state,
               trump : Suit, trick : Trick,
-              key) -> Trick :
+              key):
         obs = trick_obs(trick)
         policy = nnx.merge(graphdef, params)
 
@@ -36,14 +36,64 @@ def mk_step(policy_model):
         action = rnd.categorical(key, probas)
         card = card_from_index(action)
 
-        record = Step(obs, hidden_state, jnp.log(probas))
+        record = Step(obs, next_hidden_state, jnp.log(probas))
 
-        return record, play(trump, trick, card)
+        return play(trump, trick, card), record
     
     return jax.jit(step)
 
         
+def mk_trick_rollout (policy_model):
+    """ Plays a full trick (the 4 players chose a card) """
+    step = mk_step(policy_model)
 
+    def trick_rollout (params,
+                       initial_step, # dummy record (for the first trick) or the output of past iterations
+                       trump : Suit, initial_player : Player, hands : Hand,
+                       seed) -> Trick:
+        trick = new_trick(initial_player, hands)
+
+
+        def scan_step (carry, step_seed):
+            prev_trick, prev_records = carry
+            new_trick, new_record = step(params, prev_records.hidden_state,
+                                         trump, prev_trick, step_seed)
+            return (new_trick, new_record) , new_record
+
+        final, trajectory_records = jax.lax.scan(scan_step, (trick, initial_step), rnd.split(seed, 4) )
+        final_trick, final_record = final
+
+        return (final_trick, final_record), trajectory_records
+
+
+    return jax.jit(trick_rollout)
         
 
+def mk_rollout (policy_model):
+    trick_rollout = mk_trick_rollout(policy_model)
+
+    def rollout (params,
+                 initial_hidden_state,
+                 trump : Suit, initial_player : Player, initial_hands : Hand,
+                 seed):
+        batch_size = trump.shape[0]
+        dummy_step = Step(jnp.zeros([batch_size, 97]), # dummy observation
+                          initial_hidden_state,   # hidden state after the bidding phase
+                          jnp.zeros([batch_size, 32])) # dummy logprob
+        initial_trick = new_trick (initial_player, initial_hands)
+
+
+        def scan_step (carry, trick_seed):
+            prev_final_trick, prev_final_record = carry 
+            (final_trick, final_record), trajectory_records = trick_rollout (
+                                                                  params, prev_final_record, trump,
+                                                                  prev_final_trick.best_player,
+                                                                  prev_final_trick.hands,
+                                                                  trick_seed)
+            return (final_trick, final_record), (final_trick, trajectory_records)
+
+
+        return jax.lax.scan(scan_step,  (initial_trick, dummy_step), rnd.split(seed, 8))
+
+    return rollout
 

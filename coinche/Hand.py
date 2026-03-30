@@ -54,6 +54,7 @@ def randomHands(keys):
     return jnp.bool(jnp.where(h > 0.5, 1, 0))
 
 
+@jax.jit
 def deal(keys):
     """ Deals (multiple) times
             Return size: [B, 4, 4, 8]: the hands of the 4 players for each batch

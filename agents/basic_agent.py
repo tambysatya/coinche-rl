@@ -12,4 +12,4 @@ class BasicAgent (nnx.Module):
     @nnx.jit
     def __call__ (self, trump, obs, hidden_state): 
         x = jnp.concat([trump[:,None], obs], axis=1)
-        return self.mlp(x), None
+        return self.mlp(x), jnp.zeros([x.shape[0],1])

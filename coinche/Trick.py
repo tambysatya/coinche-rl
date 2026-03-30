@@ -4,6 +4,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as rnd
 import jax.tree_util as jtu
+from jaxtyping import Float
 
 from utils import *
 from coinche.Card import *
@@ -20,7 +21,7 @@ class Trick:
     best_card : Card # [B Cards]: best card played so far
     best_player : Player # best player so far (known as master player) : Int
 
-    value : Int [Array, "B"] # current value of the trick
+    value : Float [Array, "B"] # current value of the trick
     cards : Card  # Cards already played in the trick:  Player x Card : [B x 4]
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
     current_player : Player # The player who has to play this turn
@@ -35,13 +36,14 @@ def trick_obs(trick: Trick):
     batch_size = player.shape[0]
 
     player_hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
-    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape(1,-1))(trick.cards)
+    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards)
+    trick_cards = trick_cards.reshape([batch_size, -1])
     
     return jnp.concatenate([trick.suit[:,None],
                             card_to_tensor(trick.best_card),
                             trick.best_player[:,None],
                             trick.value[:,None],
-                            trick_cards.squeeze(),
+                            trick_cards,
                             player_hand.reshape([-1, 4*8]),
                             trick.current_player[:,None],
                             trick.size[:,None]], axis=1)
@@ -86,30 +88,6 @@ def play (trumps : Suit,
                  new_value, new_cards, new_hands, current_player, tricks.size + 1)
 
     
-
-def show_trick(trump, trick: Trick, index=0) -> str:
-    """ Displays a trick from a batch (default = 0)."""
-    suit = trick.suit[index]
-    cards = trick.cards[index] 
-    best_card = Card(trick.best_card.suit[index], trick.best_card.rank[index])
-    best_player = trick.best_player[index]
-    startedP = trick.startedP[index]
-
-    if not startedP:
-        return "[]"
-    ret = [f"[best={best_player}]"]
-    for i, card_ in enumerate(cards):
-        if jnp.any(card_):
-            card = card_from_tensor(card_.reshape(1,-1))
-            if card == best_card:
-                ret.append(f"{bcolors.BOLD}{bcolors.UNDERLINE}{show_card(trump, card, i)}{bcolors.ENDC}")
-            else:
-                ret.append(f"{show_card(trump, card, i)}")
-        else:
-            ret.append("?")
-    return " ".join(ret)
-        
-
 @jax.jit
 def new_trick(initial_players, hands : Hand) -> Trick:
     """ Generates an empty trick:
@@ -119,15 +97,33 @@ def new_trick(initial_players, hands : Hand) -> Trick:
     dummy_suit = jnp.zeros_like(initial_players, dtype=int)
     dummy_best_card = Card(jnp.full(batch_size,-1, dtype=int), jnp.full(batch_size,-1, dtype=int))
 
-    value = jnp.zeros_like(initial_players, dtype=int)
+    value = jnp.zeros_like(initial_players, dtype=float)
     cards = Card(jnp.full([batch_size, 4],-1, dtype=int), jnp.full([batch_size, 4],-1, dtype=int))
 
     return Trick(startedP, dummy_suit, dummy_best_card, initial_players, value, cards, hands, initial_players, jnp.zeros_like(initial_players, dtype=int))
 
 
 
-def mk_setup():
-    players = jnp.array([1])
-    cards = Card(jnp.array([2]), jnp.array([1]))
-    trumps = jnp.array([1])
-    return players, cards, trumps
+def show_trick(trump, trick: Trick, index=0) -> str:
+    """ Displays a trick from a batch (default = 0)."""
+    suit = trick.suit[index]
+    cards = jtu.tree_map(lambda t: t[index], trick.cards)
+    best_card = Card(trick.best_card.suit[index], trick.best_card.rank[index])
+    best_player = trick.best_player[index]
+    startedP = trick.startedP[index]
+
+    if not startedP:
+        return "[]"
+    ret = [f"[best={best_player}]"]
+    for i, card_ in enumerate(cards):
+        if card_.suit >= 0 and card.rank >= 0:
+            if card == best_card:
+                ret.append(f"{bcolors.BOLD}{bcolors.UNDERLINE}{show_card(trump, card, i)}{bcolors.ENDC}")
+            else:
+                ret.append(f"{show_card(trump, card, i)}")
+        else:
+            ret.append("?")
+    return " ".join(ret)
+        
+
+

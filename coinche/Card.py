@@ -13,8 +13,9 @@ TensorSuit = Bool [Array, "B 4"] # One-hot encoding of a suit
 TensorCard = Bool [Array, "B 12"] #Vectorized representation of a card SUIT(4) + RANK (8)
 
 suit_values = jnp.array([11,10,4,3,2,0,0,0])
-trump_values = jnp.array([20,14,11,10,4,3,2,0,0])*2/3 #TODO
+trump_values = jnp.array([20,14,11,10,4,3,0,0]) 
 no_trump_values = jnp.array([20,10,4,3,2,0,0,0])
+all_trump_values = trump_values*2/3 #TODO
 
 SUIT_ALL_TRUMP=5
 SUIT_NO_TRUMP=6
@@ -65,11 +66,20 @@ def show_card(trump, card : Card, index=0) -> str:
 @jax.jit
 def card_value (trump : Suit, card : Card) -> str:
     """ Crashes if the card is invalid """
-    return jnp.where((trump == card.suit) | (trump == SUIT_ALL_TRUMP),
-                     trump_values[card.rank],
-                     jnp.where(trump == SUIT_NO_TRUMP,
-                               no_trump_values[card.rank],
-                               suit_values[card.rank]))
+    return jnp.where (trump == SUIT_ALL_TRUMP,
+                      all_trump_values[card.rank],
+                      jnp.where(trump == SUIT_NO_TRUMP,
+                                no_trump_values[card.rank],
+                                jnp.where(trump == card.suit,
+                                          trump_values[card.rank],
+                                          suit_values[card.rank])))
+#    return jnp.where(trump == SUIT_ALL_TRUMP,
+#            all_trump_values[card.rank],
+#            jnp.where((trump == card.suit),
+#                     trump_values[card.rank],
+#                     jnp.where(trump == SUIT_NO_TRUMP,
+#                               no_trump_values[card.rank],
+#                               suit_values[card.rank])))
 
 @jax.jit
 def is_better_p (trump : Suit, cardA : Card, cardB : Card) -> jnp.bool:
