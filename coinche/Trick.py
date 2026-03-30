@@ -27,6 +27,23 @@ class Trick:
 
 
 
+def trick_obs(trick: Trick):
+    player = trick.current_player
+    batch_size = player.shape[0]
+
+    player_hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
+    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape(1,-1))(trick.cards)
+    
+    return jnp.concatenate([trick.suit[:,None],
+                            card_to_tensor(trick.best_card),
+                            trick.best_player[:,None],
+                            trick.value[:,None],
+                            trick_cards.squeeze(),
+                            player_hand.reshape([-1, 4*8]),
+                            trick.current_player[:,None]], axis=1)
+    
+
+
 
 @jax.jit
 def play (trumps : Suit,
