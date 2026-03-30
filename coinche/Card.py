@@ -13,7 +13,11 @@ TensorSuit = Bool [Array, "B 4"] # One-hot encoding of a suit
 TensorCard = Bool [Array, "B 12"] #Vectorized representation of a card SUIT(4) + RANK (8)
 
 suit_values = jnp.array([11,10,4,3,2,0,0,0])
-trump_values = jnp.array([20,14,11,10,4,3,2,0,0])
+trump_values = jnp.array([20,14,11,10,4,3,2,0,0])*2/3 #TODO
+no_trump_values = jnp.array([20,10,4,3,2,0,0,0])
+
+SUIT_ALL_TRUMP=5
+SUIT_NO_TRUMP=6
 
 @struct.dataclass
 class Card:
@@ -27,6 +31,12 @@ def card_to_tensor(card : Card) -> TensorCard:
     return jnp.concatenate([suits, ranks], axis=-1)
 
 @jax.jit
+def card_from_index (idx : Int [Array, "B"]) -> Card:
+    suit, rank = idx // 8, idx % 8
+    return Card(suit, rank)
+
+
+@jax.jit
 def card_from_tensor(ts : TensorCard) -> Card:
     suits, ranks = ts[:, :4], ts[:, 4:]
     return Card(suits.argmax(axis=1), ranks.argmax(axis=-1))
@@ -34,7 +44,7 @@ def card_from_tensor(ts : TensorCard) -> Card:
 @jax.jit
 def card_to_subhand (card : Card) -> Bool [Array, "B 4 8"]:
     idx = card.suit*8 + card.rank
-    return jax.nn.one_hot(idx,32).reshape(-1, 4, 8)
+    return jax.nn.one_hot(idx,32, dtype=bool).reshape(-1, 4, 8)
 
 
 def show_card(trump, card : Card, index=0) -> str:
@@ -54,9 +64,12 @@ def show_card(trump, card : Card, index=0) -> str:
 
 @jax.jit
 def card_value (trump : Suit, card : Card) -> str:
-    return jnp.where(trump == card.suit,
+    """ Crashes if the card is invalid """
+    return jnp.where((trump == card.suit) | (trump == SUIT_ALL_TRUMP),
                      trump_values[card.rank],
-                     suit_values[card.rank])
+                     jnp.where(trump == SUIT_NO_TRUMP,
+                               no_trump_values[card.rank],
+                               suit_values[card.rank]))
 
 @jax.jit
 def is_better_p (trump : Suit, cardA : Card, cardB : Card) -> jnp.bool:
@@ -64,5 +77,6 @@ def is_better_p (trump : Suit, cardA : Card, cardB : Card) -> jnp.bool:
    same_color_p = cardA.suit == cardB.suit
    cardb_trump_p = trump == cardB.suit
    return jnp.bool(same_color_p*(cardA.rank < cardB.rank) | jnp.logical_not(cardb_trump_p))
+
 
  
