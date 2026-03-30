@@ -16,14 +16,14 @@ Player = Int [Array, "B"]
 class Trick:
     """ Describes a (partially played) trick """
     startedP : Bool [Array, "B"] #True if the trick has started
-    suit : Suit  # Suit [INDEX] (first suit played)
+    suit : Suit  # [B Suit] (first suit played)
     best_card : Card # [B Cards]: best card played so far
     best_player : Player # best player so far (known as master player) : Int
 
     value : Int [Array, "B"] # current value of the trick
     cards : Card  # Cards already played in the trick:  Player x Card : [B x 4]
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
-    current_player : Player
+    current_player : Player # The player who has to play this turn
 
 
 

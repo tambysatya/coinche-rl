@@ -14,6 +14,7 @@ pkgs.mkShell {
     pkgs.cudaPackages.cudatoolkit
     pkgs.cudaPackages.cudnn                 # ← pour JAX + NN
     pkgs.cudaPackages.cuda_cupti            # ← pour profiling/tracing (optionnel)
+    pkgs.nvtopPackages.nvidia
 
       ];
 

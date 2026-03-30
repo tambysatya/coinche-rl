@@ -13,9 +13,9 @@ from coinche.Trick import *
 
 @jax.jit
 def possible_moves (trump,
-                    trick : Trick,
-                    player,
-                    hand : Hand) -> Hand:
+                    trick : Trick) -> Hand:
+    player = trick.current_player
+    hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
     trump_trick_p = trick.suit == trump
     #print (f"trump_trick_p={trump_trick_p}")
     possible_plays = jnp.where(trump_trick_p[:,None,None],
@@ -24,9 +24,10 @@ def possible_moves (trump,
     return jnp.where(trick.startedP[:,None,None], possible_plays, hand)
 
 @jax.jit
-def possible_moves_on_trump_trick (trick : Trick, player, hand : Hand) -> Hand:
+def possible_moves_on_trump_trick (trick : Trick, player : Player, hand : Hand) -> Hand:
     trump = trick.suit 
     trumps_in_hand = sh_get_suit(trump, hand)
+
     has_trumps_p = jnp.any(trumps_in_hand, axis=(1,2))
 
     def on_has_trump():
