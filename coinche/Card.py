@@ -15,7 +15,7 @@ TensorCard = Bool [Array, "B 12"] #Vectorized representation of a card SUIT(4) +
 suit_values = jnp.array([11,10,4,3,2,0,0,0])
 trump_values = jnp.array([20,14,11,10,4,3,0,0]) 
 no_trump_values = jnp.array([20,10,4,3,2,0,0,0])
-all_trump_values = trump_values*2/3 #TODO
+all_trump_values = trump_values*162/248 #TODO
 
 SUIT_ALL_TRUMP=5
 SUIT_NO_TRUMP=6
