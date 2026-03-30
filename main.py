@@ -21,9 +21,9 @@ policy_mdl = BasicAgent(10, nnx.Rngs(0))
 
 @partial(jax.jit, static_argnames=["batch_size"])
 def test(batch_size=1, seed=seed):
-    rollout = mk_rollout(policy_mdl)
+    #rollout = mk_rollout(policy_mdl)
     #rollout = mk_trick_rollout(policy_mdl)
-    #step = mk_step(policy_mdl)
+    step = mk_step(policy_mdl)
     params = nnx.state(policy_mdl)
     seed, key = rnd.split(seed)
     trumps = jnp.zeros(batch_size, dtype=int)
@@ -31,9 +31,9 @@ def test(batch_size=1, seed=seed):
     dummy_step = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size, 32]))
     initial_players = jnp.zeros(batch_size, dtype=int)
     initial_hands = deal(rnd.split(key, batch_size))
-    return rollout(params, dummy_step.hidden_state, trumps, initial_players, initial_hands, seed)
+    #return rollout(params, dummy_step.hidden_state, trumps, initial_players, initial_hands, seed)
     #return rollout(params, dummy_step, trumps, initial_players,  initial_hands, seed)
-    #return step(params, None, jnp.zeros(batch_size, dtype=int),trick, key)
+    return trick, step(params, None, jnp.zeros(batch_size, dtype=int),trick, key)
 
 
 def statistics (batch_size, n_epoch, seed=seed):
