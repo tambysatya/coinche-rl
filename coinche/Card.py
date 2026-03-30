@@ -30,10 +30,11 @@ def card_to_tensor(card : Card) -> TensorCard:
     ranks = jax.nn.one_hot(card.rank, 8, dtype=bool)
     return jnp.concatenate([suits, ranks], axis=-1)
 
-def dummy_card() -> Card:
-    """ Creates a dummy card (encoded as [False....False])
-        Aims to describe an unknown card"""
-    return Card(jnp.array([-1])[:,None], jnp.array([-1])[:,None])
+@jax.jit
+def card_from_index (idx : Int [Array, "B"]) -> Card:
+    suit, rank = idx // 8, idx % 8
+    return Card(suit, rank)
+
 
 @jax.jit
 def card_from_tensor(ts : TensorCard) -> Card:

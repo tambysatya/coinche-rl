@@ -24,10 +24,13 @@ class Trick:
     cards : Card  # Cards already played in the trick:  Player x Card : [B x 4]
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
     current_player : Player # The player who has to play this turn
+    size : Int [Array, "B"] # current size of the trick [0..4]
 
 
 
+@jax.jit
 def trick_obs(trick: Trick):
+    """ Observation of a trick where the only visible hand is the one of the current player """
     player = trick.current_player
     batch_size = player.shape[0]
 
@@ -40,7 +43,8 @@ def trick_obs(trick: Trick):
                             trick.value[:,None],
                             trick_cards.squeeze(),
                             player_hand.reshape([-1, 4*8]),
-                            trick.current_player[:,None]], axis=1)
+                            trick.current_player[:,None],
+                            trick.size[:,None]], axis=1)
     
 
 
@@ -79,7 +83,7 @@ def play (trumps : Suit,
 
     return Trick(jnp.ones_like(players, dtype=bool),
                  new_trick_suits, new_best_cards, new_best_players,
-                 new_value, new_cards, new_hands, current_player)
+                 new_value, new_cards, new_hands, current_player, tricks.size + 1)
 
     
 
@@ -118,10 +122,9 @@ def new_trick(initial_players, hands : Hand) -> Trick:
     value = jnp.zeros_like(initial_players, dtype=int)
     cards = Card(jnp.full([batch_size, 4],-1, dtype=int), jnp.full([batch_size, 4],-1, dtype=int))
 
-    return Trick(startedP, dummy_suit, dummy_best_card, initial_players, value, cards, hands, initial_players)
+    return Trick(startedP, dummy_suit, dummy_best_card, initial_players, value, cards, hands, initial_players, jnp.zeros_like(initial_players, dtype=int))
 
 
-    
 
 def mk_setup():
     players = jnp.array([1])

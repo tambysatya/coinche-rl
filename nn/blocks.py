@@ -17,6 +17,7 @@ class MLP (nnx.Module):
         for i in range(n_hid-1):
             self.hid.append(nnx.Linear(hid_feats, hid_feats, rngs=rngs))
 
+    @nnx.jit
     def __call__(self, x):
         y = self.lin_in(x)
         y = nnx.relu(y)+self.proj_in(x)
