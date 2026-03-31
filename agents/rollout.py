@@ -15,7 +15,7 @@ class Step:
     obs : jax.Array # observation of the state 
     hidden_state : jax.Array # embedding of the past experiences (to augment the state with an embedding, produced by the previous calls of the policy network, and carried through the trajectory).
     #Action 
-    logprobs : jax.Array # log-probability inferred by the network
+    logprobs : jax.Array #log-probability of the chosen action
 
 
 def mk_step(policy_model):
@@ -35,7 +35,9 @@ def mk_step(policy_model):
         action = rnd.categorical(key, probas)
         card = card_from_index(action)
 
-        record = Step(obs, next_hidden_state, jnp.log(probas))
+        probas = jax.vmap(lambda p, a: p[a])(probas, action)
+
+        record = Step(obs, next_hidden_state, probas)
 
         return play(trump, trick, card), record
     
@@ -88,7 +90,7 @@ def mk_rollout (policy_model):
         batch_size = trump.shape[0]
         dummy_step = Step(jnp.zeros([batch_size, 97]), # dummy observation
                           initial_hidden_state,   # hidden state after the bidding phase
-                          jnp.zeros([batch_size, 32])) # dummy logprob
+                          jnp.zeros([batch_size])) # dummy logprob
         initial_trick = new_trick (initial_player, initial_hands)
 
 
@@ -119,32 +121,26 @@ def compute_states_rewards (trump : Suit,
     values = traj_trick.value 
     # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
     has_10_der_p = ~(trump == SUIT_ALL_TRUMP)
-    values = jnp.where (has_10_der_p,
-                        values.at[-1,:].set(values[-1,:]+10),
-                        values)
+    bonus = has_10_der_p*10 
+    values = values.at[-1,:].add(bonus)
 
     values = values.swapaxes(0,1) # [batch_size, 8]
     winners = winners.swapaxes(0,1)
-    traj_records = jtu.tree_map(lambda l: l.swapaxes(0,2).swapaxes(1,2),traj_records) # [batch_size, 8, 4]
+    traj_records = jtu.tree_map(lambda l: jnp.moveaxis(l, (0,1,2), (2,0,1)),traj_records) # [batch_size, 8, 4]
     
 
-    @jax.jit
-    def generates_record_reward (value, winner):  # value: [8,], winner[8,]
-        """ Computes the value of a trick (vector of size 4)"""
-        team0, team1 = jnp.array([1,0,1,0]), jnp.array([0,1,0,1])
-        scores = jax.vmap (lambda w, v: v*((w == 0)*team0 + (w == 1)*team1))(winner, value)
-        return scores # [8,4]
+    team0, team1 = jnp.array([1,0,1,0]), jnp.array([0,1,0,1])
 
-
+    coefs = jnp.where(winners[...,None]==0, team0, team1)
+    rewards = values[...,None]*coefs
 
    
-    rewards = jax.vmap(generates_record_reward)(values, winners) # [B, 8,4]
+    #rewards = jax.vmap(generates_record_reward)(values, winners) # [B, 8,4]
 
     # generates the dataset 
     rewards = rewards.flatten() # [B*32, 1]
+
     traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
-
-
 
 
 

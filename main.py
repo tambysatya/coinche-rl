@@ -30,7 +30,7 @@ def test(batch_size=1, seed=seed):
     seed, key = rnd.split(seed)
     trumps = jnp.zeros(batch_size, dtype=int)
     trick = new_trick(jnp.zeros(batch_size, dtype=int), deal(rnd.split(key, batch_size)))
-    dummy_step = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size, 32]))
+    dummy_step = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size]))
     initial_players = jnp.zeros(batch_size, dtype=int)
     initial_hands = deal(rnd.split(key, batch_size))
     return rollout(params, dummy_step.hidden_state, trumps, initial_players, initial_hands, seed)
@@ -56,7 +56,7 @@ def dbg_scan(batch_size=1, seed=seed):
     seed, key = rnd.split(seed)
     trumps = jnp.zeros(batch_size, dtype=int)
     trick = new_trick(jnp.zeros(batch_size, dtype=int), deal(rnd.split(key, batch_size)))
-    record = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size, 32]))
+    record = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size]))
 
     players = jnp.zeros(batch_size, dtype=int)
     hands = deal(rnd.split(key, batch_size))
