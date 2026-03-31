@@ -111,35 +111,30 @@ def mk_rollout (policy_model):
 
 
 @jax.jit
-def compute_states_rewards (trump : Suit,
+def compute_states_rewards (trump : Suit, # [batch_size]
                             traj_trick : Trick, # [8, batch_size]
                             traj_records : Step): # [8, 4, batch_size]
     """ Generates a batch of example (Step, Reward) """
 
     batch_size = trump.shape[0]
-    winners = traj_trick.best_player % 2
-    values = traj_trick.value 
     # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
     has_10_der_p = ~(trump == SUIT_ALL_TRUMP)
     bonus = has_10_der_p*10 
-    values = values.at[-1,:].add(bonus)
+    values = traj_trick.value.at[-1,:].add(bonus) # [8, batch_size]
+    winners = traj_trick.best_player % 2 # [8, batch_size]
 
-    values = values.swapaxes(0,1) # [batch_size, 8]
-    winners = winners.swapaxes(0,1)
-    traj_records = jtu.tree_map(lambda l: jnp.moveaxis(l, (0,1,2), (2,0,1)),traj_records) # [batch_size, 8, 4]
     
+    player_indices = jnp.arange(4)[None,:,None]
+    player_indices = jnp.tile(player_indices, (8, 1, batch_size)) #(8,4,batch_size) => player_indices[a][b] = [b,b,b,...,b] for each item of the batch
+    winners = jnp.tile(winners[:,None,:], (1,4,1)) # (8, 4, batch_size)
+    values = jnp.tile(values[:,None,:], (1,4,1)) # (8, 4, batch_size)
 
-    team0, team1 = jnp.array([1,0,1,0]), jnp.array([0,1,0,1])
-
-    coefs = jnp.where(winners[...,None]==0, team0, team1)
-    rewards = values[...,None]*coefs
-
-   
-    #rewards = jax.vmap(generates_record_reward)(values, winners) # [B, 8,4]
+    rewards = jnp.where(player_indices % 2 == winners, values, 0)
 
     # generates the dataset 
-    rewards = rewards.flatten() # [B*32, 1]
+    return traj_trick.best_player%2 , rewards
 
+    rewards = rewards.flatten() # [B*32, 1]
     traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
 
 
