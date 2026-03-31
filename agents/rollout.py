@@ -32,7 +32,6 @@ def mk_step(policy_model):
         probas = jnp.where(legal_moves.reshape([-1,32]),
                            logits,
                            -jnp.inf)
-        probas = jax.nn.softmax(probas, axis=1)
         action = rnd.categorical(key, probas)
         card = card_from_index(action)
 
@@ -95,5 +94,5 @@ def mk_rollout (policy_model):
 
         return jax.lax.scan(scan_step,  (initial_trick, dummy_step), rnd.split(seed, 8))
 
-    return rollout
+    return jax.jit(rollout)
 
