@@ -75,6 +75,16 @@ def mk_rollout (policy_model):
                  initial_hidden_state,
                  trump : Suit, initial_player : Player, initial_hands : Hand,
                  seed):
+        """ Simulates a complete trick phase (8 tricks):
+                input : - parameters of the policy network
+                        - user-defined hidden_state, also passed to the policy network
+                        - initial conditions of the game: trump suit, starting player, and cards distributions
+                returns: - the complete tricks among the trajectory: it is the resulting trick where all 4 players played a card
+                         - the observations records among the trajectory (4 per trick)
+                Dimension:
+                    - complete tricks : [8 x batch_size]
+                    - observations records : [8 x 4 x batch_size]
+        """
         batch_size = trump.shape[0]
         dummy_step = Step(jnp.zeros([batch_size, 97]), # dummy observation
                           initial_hidden_state,   # hidden state after the bidding phase
@@ -92,7 +102,8 @@ def mk_rollout (policy_model):
             return (final_trick, final_record), (final_trick, trajectory_records)
 
 
-        return jax.lax.scan(scan_step,  (initial_trick, dummy_step), rnd.split(seed, 8))
+        (final_trick, final_record), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_trick, dummy_step), rnd.split(seed, 8))
+        return traj_trick, traj_records
 
     return jax.jit(rollout)
 
