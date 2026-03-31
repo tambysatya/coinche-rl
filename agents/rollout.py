@@ -132,8 +132,6 @@ def compute_states_rewards (trump : Suit, # [batch_size]
     rewards = jnp.where(player_indices % 2 == winners, values, 0)
 
     # generates the dataset 
-    return traj_trick.best_player%2 , rewards
-
     rewards = rewards.flatten() # [B*32, 1]
     traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
 
