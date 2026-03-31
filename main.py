@@ -6,6 +6,7 @@ from coinche.LegalMoves import *
 
 from agents.rollout import *
 from agents.basic_agent import *
+from agents.train import *
 
 import jax.random as rnd
 import flax.nnx as nnx
@@ -17,6 +18,7 @@ from tqdm import tqdm
 
 seed = rnd.key(0)
 policy_mdl = BasicAgent(10, nnx.Rngs(0))
+critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
 
 @partial(jax.jit, static_argnames=["batch_size"])

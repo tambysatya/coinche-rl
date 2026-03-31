@@ -107,3 +107,48 @@ def mk_rollout (policy_model):
 
     return jax.jit(rollout)
 
+
+@jax.jit
+def compute_states_rewards (trump : Suit,
+                            traj_trick : Trick, # [8, batch_size]
+                            traj_records : Step): # [8, 4, batch_size]
+    """ Generates a batch of example (Step, Reward) """
+
+    batch_size = trump.shape[0]
+    winners = traj_trick.best_player % 2
+    values = traj_trick.value 
+    # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
+    has_10_der_p = ~(trump == SUIT_ALL_TRUMP)
+    values = jnp.where (has_10_der_p,
+                        values.at[-1,:].set(values[-1,:]+10),
+                        values)
+
+    values = values.swapaxes(0,1) # [batch_size, 8]
+    winners = winners.swapaxes(0,1)
+    traj_records = jtu.tree_map(lambda l: l.swapaxes(0,2).swapaxes(1,2),traj_records) # [batch_size, 8, 4]
+    
+
+    @jax.jit
+    def generates_record_reward (value, winner):  # value: [8,], winner[8,]
+        """ Computes the value of a trick (vector of size 4)"""
+        team0, team1 = jnp.array([1,0,1,0]), jnp.array([0,1,0,1])
+        scores = jax.vmap (lambda w, v: v*((w == 0)*team0 + (w == 1)*team1))(winner, value)
+        return scores # [8,4]
+
+
+
+   
+    rewards = jax.vmap(generates_record_reward)(values, winners) # [B, 8,4]
+
+    # generates the dataset 
+    rewards = rewards.flatten() # [B*32, 1]
+    traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
+
+
+
+
+
+    return traj_records, rewards
+
+
+
