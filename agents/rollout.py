@@ -143,7 +143,8 @@ def transition_rewards (trump : Suit, # [batch_size]
 @jax.jit
 def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
                         discount_factor): # float
-    """ Generates the state/values function, ie sum_i gamma^i r_i where gamma is the discount factor"""
+    """ Generates the state/values function, ie the cumulative rewards (or cost-to-go) from each state:
+        sum_i gamma^i r_i where gamma is the discount factor"""
 
     def cumulative_sum (i):
         # sets to 0 every index before i 
