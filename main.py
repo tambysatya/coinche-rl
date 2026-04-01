@@ -23,7 +23,7 @@ critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
 @partial(jax.jit, static_argnames=["batch_size"])
 def test(batch_size=1, seed=seed):
-    rollout = mk_rollout(policy_mdl)
+    rollout_full = mk_rollout(policy_mdl)
     #rollout = mk_trick_rollout(policy_mdl)
     #step = mk_step(policy_mdl)
     params = nnx.state(policy_mdl)
@@ -34,8 +34,10 @@ def test(batch_size=1, seed=seed):
     initial_hidden_state = jnp.zeros([batch_size,1])
     initial_players = jnp.zeros(batch_size, dtype=int)
     initial_hands = deal(rnd.split(key, batch_size))
-    return rollout(params, initial_hidden_state, trumps, initial_players, initial_hands, seed)
-    #return rollout(params, dummy_step, trumps, initial_players,  initial_hands, seed)
+    initial_scores = jnp.zeros([batch_size,2])
+    total_score = jnp.zeros([batch_size])
+    return rollout_full(params, initial_hidden_state, trumps, initial_players, initial_hands, seed)
+    #return rollout(params, initial_hidden_state, trumps, initial_scores, total_score, initial_players,  initial_hands, seed)
     #return trick, step(params, None, jnp.zeros(batch_size, dtype=int),trick, key)
 
 
@@ -71,6 +73,25 @@ def dbg_scan(batch_size=1, seed=seed):
         total += trick.value
         print (f"{trick.value} (total={total}) players={players} next_player={trick.current_player}  card_per_player={hands[0].sum(axis=(1,2))} trick={trick.cards}")
         #print (f"{trick.value} (total={total}) players={players} card_per_player={hands[0].sum(axis=(1,2))}, traj.shape={traj.obs.shape}")
+
+
+
+def test_samples(batch_size=32, discount_factor=0.9, seed=seed):
+    players = jnp.zeros(batch_size,dtype=int)
+    trump = jnp.zeros(batch_size,dtype=int)
+    hidden_states = jnp.zeros([batch_size,1])
+
+    collect_samples = mk_collect_samples(policy_mdl)
+
+    seed, key = rnd.split(seed)
+
+    records, rewards = collect_samples(discount_factor, 
+                                       nnx.state(policy_mdl),
+                                       hidden_states, trump, players, deal(rnd.split(key,batch_size)), seed)
+
+    return records, rewards
+
+
 
 
 

@@ -168,7 +168,7 @@ def transition_rewards (trump : Suit, # [batch_size]
 
 
 
-    return traj_records, transition_rewards
+    return transition_rewards
 
 
 @jax.jit
@@ -190,5 +190,25 @@ def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
 
     return jax.vmap(cumulative_sum)(jnp.arange(8))
 
+
+def mk_collect_samples(policy_mdl):
+    rollout = mk_rollout(policy_mdl)
+
+    def collect_samples (
+            discount_factor,
+            params,
+            initial_hidden_state,
+            trump : Suit, initial_player : Player, initial_hands : Hand,
+            seed):
+        """ Samples rollouts, and generates a dataset [state, cumulative_reward] """
+
+        batch_size = trump.shape[0]
+        traj_tricks, traj_records = rollout(params, initial_hidden_state,
+                                            trump, initial_player, initial_hands, seed)
+        rewards = transition_rewards(trump, traj_tricks, traj_records)
+        rewards = cumulative_rewards(rewards, discount_factor)
+
+        return jtu.tree_map(lambda l: l.reshape([batch_size*32,-1]).squeeze(), traj_records), rewards.flatten()
+    return jax.jit(collect_samples)
 
 

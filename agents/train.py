@@ -21,7 +21,7 @@ def mk_train_critic(critic_mdl):
     def loss_function (params, 
                        trump, step, reward):
         critic = nnx.merge(graphdef, params)
-        pred = critic(trump, step.obs, step.hidden_state)
+        pred = critic(trump, step.obs)
         return ((pred - reward)**2).mean()
 
 
