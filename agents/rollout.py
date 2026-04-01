@@ -9,13 +9,24 @@ import flax.nnx as nnx
 from coinche.Trick import *
 from coinche.LegalMoves import *
 
+
+Score = Int [Array, "B"]
+
+@struct.dataclass
+class Observation:
+    """ Synthesis of the observations of a trick """
+    trick : jax.Array # actual trick, with only the hand of the current player
+    current_score : Score  # current score of the team
+    total_score : Score # sum of the cards played so far
+    hidden_state : jax.Array # user-defined datastructure that is both used and produced by the policy/value network to augment the data
+
 @struct.dataclass
 class Step:
     # Inputs of the policy network
-    obs : jax.Array # observation of the state 
-    hidden_state : jax.Array # embedding of the past experiences (to augment the state with an embedding, produced by the previous calls of the policy network, and carried through the trajectory).
+    obs : Observation # observation of the state 
     #Action 
     logprobs : jax.Array #log-probability of the chosen action
+
 
 
 def mk_step(policy_model):
@@ -23,12 +34,14 @@ def mk_step(policy_model):
 
     def step (params, hidden_state,
               trump : Suit, trick : Trick,
+              current_score,total_score, 
               key):
-        obs = trick_obs(trick)
+        """ The current player plays a card """
+        obs = Observation(trick_obs(trick), current_score, total_score, hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trump, trick)
-        logits, next_hidden_state = policy(trump, obs, hidden_state)
+        logits, next_hidden_state = policy(trump, obs)
         probas = jnp.where(legal_moves.reshape([-1,32]),
                            logits,
                            -jnp.inf)
@@ -37,9 +50,9 @@ def mk_step(policy_model):
 
         probas = jax.vmap(lambda p, a: p[a])(probas, action)
 
-        record = Step(obs, next_hidden_state, probas)
+        record = Step(obs, probas)
 
-        return play(trump, trick, card), record
+        return (next_hidden_state, play(trump, trick, card)), record
     
     return jax.jit(step)
 
@@ -49,22 +62,30 @@ def mk_trick_rollout (policy_model):
     step = mk_step(policy_model)
 
     def trick_rollout (params,
-                       initial_step, # dummy record (for the first trick) or the output of past iterations
-                       trump : Suit, initial_player : Player, hands : Hand,
+                       initial_hidden, # previous hidden state
+                       trump : Suit,
+                       team_score, # [score_team_0, score_team_1]
+                       total_score,
+                       initial_player : Player, hands : Hand,
                        seed) -> Trick:
         trick = new_trick(initial_player, hands)
+        
 
 
         def scan_step (carry, step_seed):
-            prev_trick, prev_records = carry
-            new_trick, new_record = step(params, prev_records.hidden_state,
-                                         trump, prev_trick, step_seed)
-            return (new_trick, new_record) , new_record
+            prev_hidden, prev_trick = carry
+            player_score = jax.vmap(lambda s, p: s[p])(team_score, prev_trick.current_player%2) # scores of the current player
 
-        final, trajectory_records = jax.lax.scan(scan_step, (trick, initial_step), rnd.split(seed, 4) )
-        final_trick, final_record = final
+            (new_hidden, new_trick), new_record = step(params, prev_hidden,
+                                                       trump, prev_trick,
+                                                       player_score, total_score,
+                                                       step_seed)
+            return (new_hidden, new_trick) , new_record
 
-        return (final_trick, final_record), trajectory_records
+        final, trajectory_records = jax.lax.scan(scan_step, (initial_hidden, trick), rnd.split(seed, 4) )
+        final_hidden, final_trick = final
+
+        return (final_hidden, final_trick), trajectory_records
 
 
     return jax.jit(trick_rollout)
@@ -88,23 +109,33 @@ def mk_rollout (policy_model):
                     - observations records : [8 x 4 x batch_size]
         """
         batch_size = trump.shape[0]
-        dummy_step = Step(jnp.zeros([batch_size, 97]), # dummy observation
-                          initial_hidden_state,   # hidden state after the bidding phase
-                          jnp.zeros([batch_size])) # dummy logprob
+        initial_scores = jnp.zeros([batch_size,2])
+        initial_total_score = jnp.zeros([batch_size])
         initial_trick = new_trick (initial_player, initial_hands)
 
 
         def scan_step (carry, trick_seed):
-            prev_final_trick, prev_final_record = carry 
-            (final_trick, final_record), trajectory_records = trick_rollout (
-                                                                  params, prev_final_record, trump,
-                                                                  prev_final_trick.best_player,
-                                                                  prev_final_trick.hands,
+            prev_hidden, prev_trick, prev_scores, prev_total_score = carry 
+            (next_hidden, finished_trick), trajectory_records = trick_rollout (
+                                                                  params, prev_hidden,
+                                                                  trump,
+                                                                  prev_scores, #score of both teams
+                                                                  prev_total_score,
+                                                                  prev_trick.best_player,
+                                                                  prev_trick.hands,
                                                                   trick_seed)
-            return (final_trick, final_record), (final_trick, trajectory_records)
+            #update the team scores according to which team won the trick
+            new_score = jnp.where((finished_trick.best_player % 2 == 0)[:,None],
+                                  prev_scores.at[:,0].add(finished_trick.value),
+                                  prev_scores.at[:,1].add(finished_trick.value))
+            total_score = prev_total_score + finished_trick.value
 
 
-        (final_trick, final_record), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_trick, dummy_step), rnd.split(seed, 8))
+            return (next_hidden, finished_trick, new_score, total_score), (finished_trick, trajectory_records)
+
+        
+
+        (final_trick, final_record, _, _), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, initial_trick, initial_scores, initial_total_score), rnd.split(seed, 8))
         return traj_trick, traj_records
 
     return jax.jit(rollout)
