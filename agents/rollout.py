@@ -111,10 +111,10 @@ def mk_rollout (policy_model):
 
 
 @jax.jit
-def compute_states_rewards (trump : Suit, # [batch_size]
-                            traj_trick : Trick, # [8, batch_size]
-                            traj_records : Step): # [8, 4, batch_size]
-    """ Generates a batch of example (Step, Reward) """
+def transition_rewards (trump : Suit, # [batch_size]
+                        traj_trick : Trick, # [8, batch_size]
+                        traj_records : Step): # [8, 4, batch_size]
+    """ Generates a batch of example (Step, TransitionReward), both are of shape [8, 4, batch_size]"""
 
     batch_size = trump.shape[0]
     # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
@@ -129,15 +129,34 @@ def compute_states_rewards (trump : Suit, # [batch_size]
     winners = jnp.tile(winners[:,None,:], (1,4,1)) # (8, 4, batch_size)
     values = jnp.tile(values[:,None,:], (1,4,1)) # (8, 4, batch_size)
 
-    rewards = jnp.where(player_indices % 2 == winners, values, 0)
+    transition_rewards = jnp.where(player_indices % 2 == winners, values, 0) # (8, 4, batch_size)
 
     # generates the dataset 
-    rewards = rewards.flatten() # [B*32, 1]
-    traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
+    #rewards = rewards.flatten() # [B*32, 1]
+    #traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
 
 
 
-    return traj_records, rewards
+    return traj_records, transition_rewards
+
+
+@jax.jit
+def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
+                        discount_factor): # float
+    """ Generates the state/values function, ie sum_i gamma^i r_i where gamma is the discount factor"""
+
+    def cumulative_sum (i):
+        # sets to 0 every index before i 
+        coefs = jnp.arange(8) - i 
+        coefs = jnp.maximum(coefs, 0)
+        coefs = discount_factor ** coefs
+
+        rew = transition_rewards * coefs[:,None,None]
+
+        discounted_rew = jnp.cumsum(rew, axis=0)
+        return discounted_rew[i]
+
+    return jax.vmap(cumulative_sum)(jnp.arange(8))
 
 
 
