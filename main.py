@@ -93,5 +93,23 @@ def test_samples(batch_size=32, discount_factor=0.9, seed=seed):
 
 
 
+def test_ppo (n_trajectory_samples=32, batch_size=32, n_epoch=100, discount_factor=0.9,lr=0.05, seed=seed):
+    
+    train_actor, train_critic = mk_train_actor(policy_mdl, critic_mdl), mk_train_critic(critic_mdl)
+
+    print ("Rollout...")
+    records, rewards = test_samples(batch_size=n_trajectory_samples, discount_factor=discount_factor, seed=seed)
+
+    trumps = jnp.zeros(n_trajectory_samples*32) # mult by 32 because we have 32 sample per game
+    critic_params = train_critic(nnx.state(critic_mdl),
+                                 trumps, records, rewards, 
+                                 n_epoch, batch_size=batch_size, lr=lr)
+
+    actor_params = train_actor(critic_params, #WARNING: use the new critic values
+                               nnx.state(policy_mdl),
+                               trumps, records, rewards,
+                               n_epoch, batch_size=batch_size, lr=lr, eps=0.2)
+
+
 
 
