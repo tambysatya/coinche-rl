@@ -25,6 +25,8 @@ class Step:
     # Inputs of the policy network
     obs : Observation # observation of the state 
     #Action 
+    action : Int [Array, "B"] #chosen card
+    action_mask : Bool [Array, "B 32"]
     logprobs : jax.Array #log-probability of the chosen action
 
 
@@ -41,16 +43,17 @@ def mk_step(policy_model):
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trump, trick)
+        action_mask = legal_moves.reshape([-1,32])
         logits, next_hidden_state = policy(trump, obs)
-        probas = jnp.where(legal_moves.reshape([-1,32]),
+        logits = jnp.where(action_mask,
                            logits,
                            -jnp.inf)
-        action = rnd.categorical(key, probas)
+        action = rnd.categorical(key, logits)
         card = card_from_index(action)
 
-        probas = jax.vmap(lambda p, a: p[a])(probas, action)
+        probas = jax.vmap(lambda p, a: p[a])(jax.nn.softmax(logits), action)
 
-        record = Step(obs, probas)
+        record = Step(obs, action, action_mask, jnp.log(probas))
 
         return (next_hidden_state, play(trump, trick, card)), record
     

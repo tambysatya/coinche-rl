@@ -42,17 +42,22 @@ def mk_train_critic(critic_mdl):
 
 
 
+    @partial(jax.jit, static_argnames=['batch_size'])
+    def batch_dataset(trump, step, reward, batch_size):
+        trump = mk_minibatches(trump, batch_size)
+        step = jtu.tree_map(lambda l: mk_minibatches(l, batch_size), step)
+        reward = mk_minibatches(reward, batch_size)
+        return trump, step, reward
+
+
     def train_critic(params, 
-                     trumps,step, reward,
+                     trump,step, reward,
                      n_epoch,batch_size=32,
                      lr = 0.1):
         optimizer = optax.adam(lr)
         opt_state = optimizer.init(params)
         
-        trump = mk_minibatches(trumps, batch_size)
-        step = jtu.tree_map(lambda l: mk_minibatches(l, batch_size), step)
-        reward = mk_minibatches(reward, batch_size)
-        batched_dataset = trump, step, reward
+        batched_dataset = batch_dataset(trump, step, reward, batch_size)
 
         print (f"Critic optimization:")
         for i in range(n_epoch):
@@ -79,7 +84,14 @@ def mk_train_actor (actor_mdl, critic_mdl):
                   trump, records, advantages,
                   eps=0.2):
         new_policy = nnx.merge(actor_graphdef, actor_current_params)
-        logprobs_new = jnp.log(new_policy(trump, records.obs)[0])
+        jax.debug.print("records: {} ", records.obs.current_score.shape)
+        logits, _ = new_policy(trump, records.obs)
+        logits = jnp.where(records.action_mask,
+                           logits,
+                           -jnp.inf)
+        logits = jax.nn.softmax(logits)
+        logits = jnp.clip(logits, 1e-10, 1.0)
+        logprobs_new = jax.vmap(lambda p, a: p[a])(jnp.log(logits), records.action)
         ratio = jnp.exp(logprobs_new - records.logprobs)
         
         unclipped = ratio*advantages
@@ -111,15 +123,14 @@ def mk_train_actor (actor_mdl, critic_mdl):
     def epoch_train (optimizer, batched_dataset, params, opt_state, eps=0.2):
         trumps, _, _ = batched_dataset
         batch_size = trumps.shape[0]
-        return jax.lax.scan(partial(batch_scan, optimizer, batched_dataset, eps),
-                            (params, opt_state),
-                            jnp.arange(batch_size))
+        ret, loss = jax.lax.scan(partial(batch_scan, optimizer, batched_dataset, eps),
+                                 (params, opt_state),
+                                 jnp.arange(batch_size))
+        return ret, loss.mean()
 
 
-    def train_actor (critic_current_params, actor_current_params,
-                     trump, records, rewards,
-                     n_epoch, batch_size=32,
-                     lr=0.1, eps=0.2):
+    @partial(jax.jit, static_argnames=['batch_size'])
+    def batch_dataset(critic_current_params, trump, records, rewards, batch_size):
         trump, rewards = mk_minibatches(trump, batch_size), mk_minibatches(rewards, batch_size)
         records = jtu.tree_map(lambda l: mk_minibatches(l, batch_size), records)
         
@@ -127,10 +138,19 @@ def mk_train_actor (actor_mdl, critic_mdl):
         print (f"Advantages evaluation")
         advantages = jax.vmap(partial(compute_advantages, critic_current_params))(trump, records.obs, rewards)
 
+        return trump, records, advantages
+
+
+
+    def train_actor (critic_current_params, actor_current_params,
+                     trump, records, rewards,
+                     n_epoch, batch_size=32,
+                     lr=0.1, eps=0.2):
         optimizer = optax.adam(lr)
         opt_state = optimizer.init(actor_current_params)
         params = actor_current_params
 
+        trump, records, advantages = batch_dataset(critic_current_params, trump, records, rewards, batch_size)
         print (f"Actor optimization:")
         for i in range(n_epoch):
             (params, opt_state), value = epoch_train(optimizer,
