@@ -25,6 +25,7 @@ class Step:
     # Inputs of the policy network
     obs : Observation # observation of the state 
     #Action 
+    agent : Int [Array, "B"] #agent index
     action : Int [Array, "B"] #chosen card
     action_mask : Bool [Array, "B 32"]
     logprobs : jax.Array #log-probability of the chosen action
@@ -34,12 +35,14 @@ class Step:
 def mk_step(policy_model):
     graphdef, _ = nnx.split(policy_model)
 
-    def step (params, hidden_state,
+    def step (agent_index,  # current agent index : Int
+              params, hidden_state,
               trump : Suit, trick : Trick,
               current_score,total_score, 
               key):
         """ The current player plays a card """
 
+        batch_size = trump.shape[0]
         obs = Observation(trick_obs(trick), current_score, total_score, hidden_state)
         policy = nnx.merge(graphdef, params)
 
@@ -56,7 +59,9 @@ def mk_step(policy_model):
 
         probas = jax.vmap(lambda p, a: p[a])(jax.nn.softmax(logits), action)
 
-        record = Step(obs, action, action_mask, jnp.log(probas))
+        record = Step(obs,
+                      jnp.tile (agent_index, (batch_size, 1)), #also store the index of the agent who plays (same agent for the entire batch)
+                      action, action_mask, jnp.log(probas))
 
         return (next_hidden_state, play(trump, trick, card)), record
 
@@ -68,26 +73,26 @@ def mk_league_step (policy_model, pool_size):
     agent_step = mk_step(policy_model)
 
     def step (all_params, # [P, Params]
-              agent_index, # [B] : index of the agent that plays this turn
+              permutation : Int [Array, "B"], # [B] : index of the agent that plays this turn
               hidden_state, #[B, ...] hidden state of the agent
               trump : Suit, trick : Trick, current_score, total_score,
               key):
         
         batch_size = trump.shape[0]
-        permutation = agent_index.argsort()
-        sorted_hidden = hidden_state[permutation]
-        sorted_hidden = sorted_hidden.reshape([pool_size,  batch_size // pool_size, -1])
-
-        batch_per_agent = jtu.tree_map(
-                                  lambda l : l[permutation].reshape(pool_size, batch_size // pool_size, *(l.shape[1:])),
-                                  (hidden_state, trump, trick, current_score, total_score))
+        batch_per_agent = group_dataset_by_agent(pool_size, permutation, (hidden_state, trump, trick, current_score, total_score))
+       ## batch_per_agent = jtu.tree_map(
+       ##                           lambda l : l[permutation].reshape(pool_size, batch_size // pool_size, *(l.shape[1:])),
+       ##                           (hidden_state, trump, trick, current_score, total_score))
 
         hidden_state, trump, trick, current_score, total_score = batch_per_agent # [(P, B, ...)]
-        ret, record = jax.vmap(agent_step)(all_params, hidden_state, trump, trick, current_score, total_score, rnd.split(key,pool_size))
+        ret, record = jax.vmap(agent_step)(
+                jnp.arange(pool_size), all_params,
+                hidden_state, trump, trick, current_score, total_score, rnd.split(key,pool_size))
 
-        ret, record = jtu.tree_map(
-                            lambda l : (l.reshape(batch_size, *(l.shape[2:])).squeeze())[permutation],
-                            (ret, record))
+        #ret, record = jtu.tree_map(
+        #                    lambda l : (l.reshape(batch_size, *(l.shape[2:])).squeeze())[permutation],
+        #                    (ret, record))
+        ret, record = ungroup_dataset_by_agent(permutation, (ret,record))
 
         return ret, record
 
@@ -100,7 +105,7 @@ def mk_trick_rollout (policy_model, pool_size):
     step = mk_league_step(policy_model, pool_size)
 
     def trick_rollout (all_params,
-                       agent_indices : Int [Array, "B 2"], # agents that play Team0 and Team1
+                       permutations: Int [Array, "B 2"], # permutation describing which agents plays Team0 and Team1
                        initial_hidden, #  [B, 4, ...] previous hidden state for each player
                        trump : Suit,
                        team_score, # [score_team_0, score_team_1]
@@ -114,10 +119,10 @@ def mk_trick_rollout (policy_model, pool_size):
         def scan_step (carry, step_seed):
             all_hidden, prev_trick = carry
             cur_team = prev_trick.current_player % 2
-            player_score, agent_index = jax.vmap(lambda s, a, p: (s[p], a[p]))(team_score, agent_indices, cur_team) # extracts the scores and index of the current player
+            player_score, player_permutation = jax.vmap(lambda s, a, p: (s[p], a[p]))(team_score, permutations, cur_team) # extracts the scores and index of the current player
             player_hidden = jax.vmap(lambda h, p: h[p])(all_hidden, prev_trick.current_player) #extracts the hidden state of the current player
 
-            (new_hidden, new_trick), new_record = step(all_params, agent_index, 
+            (new_hidden, new_trick), new_record = step(all_params, player_permutation,
                                                        player_hidden,
                                                        trump, prev_trick,
                                                        player_score, total_score,
@@ -158,11 +163,13 @@ def mk_rollout (policy_model, pool_size):
         initial_total_score = jnp.zeros([batch_size])
         initial_trick = new_trick (initial_player, initial_hands)
 
+        permutations = agent_indices.argsort(axis=1) # computes one for all the permutations in order to easily reorder the batch by consecutive players
+
 
         def scan_step (carry, trick_seed):
             prev_hidden, prev_trick, prev_scores, prev_total_score = carry 
             (next_hidden, finished_trick), trajectory_records = trick_rollout (
-                                                                  all_params, agent_indices,
+                                                                  all_params, permutations,
                                                                   prev_hidden,
                                                                   trump,
                                                                   prev_scores, #score of both teams

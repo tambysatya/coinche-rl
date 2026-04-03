@@ -5,14 +5,14 @@ import jax.numpy as jnp
 import jax.random as rnd
 import jax.tree_util as jtu
 import flax.nnx as nnx
+from jaxtyping import Array, Int
 import optax
+from functools import partial
 
 from utils import *
 from coinche.Trick import *
 from coinche.LegalMoves import *
 from agents.rollout import *
-
-
 
 def mk_train_critic(critic_mdl):
     graphdef, _ = nnx.split(critic_mdl)
