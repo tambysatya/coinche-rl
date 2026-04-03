@@ -21,32 +21,42 @@ policy_mdl = BasicAgent(10, nnx.Rngs(0))
 critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
 
-@partial(jax.jit, static_argnames=["batch_size"])
-def test(batch_size=1, seed=seed):
-    rollout_full = mk_rollout(policy_mdl)
-    #rollout = mk_trick_rollout(policy_mdl)
+def generate_actor_pool (pool_size):
+    pool = [nnx.state(BasicAgent(10,nnx.Rngs(0))) for i in range (pool_size)]
+    return jtu.tree_map(lambda *f: jnp.stack(f), *pool)
+
+
+@partial(jax.jit, static_argnames=["batch_size", "pool_size"])
+def test(batch_size=4, pool_size=2, seed=seed):
+    rollout_full = mk_rollout(policy_mdl, pool_size)
+    #rollout = mk_trick_rollout(policy_mdl, pool_size)
     #step = mk_step(policy_mdl)
+    #league_step = mk_league_step(policy_mdl, pool_size)
     params = nnx.state(policy_mdl)
+    initial_params = generate_actor_pool(pool_size)
+    agent_indices = jnp.zeros([batch_size], dtype=int)
+    game_indices = jnp.concat([jnp.zeros([batch_size,1]), jnp.ones([batch_size,1])], axis=1)
     seed, key = rnd.split(seed)
     trumps = jnp.zeros(batch_size, dtype=int)
     trick = new_trick(jnp.zeros(batch_size, dtype=int), deal(rnd.split(key, batch_size)))
     #dummy_step = Step (trick_obs(trick), jnp.zeros([batch_size,1]), jnp.zeros([batch_size]))
-    initial_hidden_state = jnp.zeros([batch_size,1])
+    initial_hidden_state = jnp.zeros([batch_size,4,1])
     initial_players = jnp.zeros(batch_size, dtype=int)
     initial_hands = deal(rnd.split(key, batch_size))
     initial_scores = jnp.zeros([batch_size,2])
     total_score = jnp.zeros([batch_size])
-    return rollout_full(params, initial_hidden_state, trumps, initial_players, initial_hands, seed)
-    #return rollout(params, initial_hidden_state, trumps, initial_scores, total_score, initial_players,  initial_hands, seed)
-    #return trick, step(params, None, jnp.zeros(batch_size, dtype=int),trick, key)
+    #return rollout_full(params, initial_hidden_state, trumps, initial_players, initial_hands, seed)
+    #return league_step(initial_params, agent_indices, initial_hidden_state, trumps, trick, initial_scores[0], total_score, key)
+    #return rollout(initial_params, game_indices, initial_hidden_state, trumps, initial_scores, total_score, initial_players, initial_hands, key)
+    return rollout_full(initial_params, game_indices, initial_hidden_state, trumps, initial_players, initial_hands, seed)
 
 
-def statistics (batch_size, n_epoch, seed=seed):
+def statistics (batch_size, pool_size, n_epoch, seed=seed):
     total_sum = 0
     for _ in tqdm(range(n_epoch)):
         seed, key = rnd.split(seed)
         start = time()
-        test(batch_size=batch_size)
+        test(batch_size=batch_size, pool_size=pool_size, seed=key)
         stop = time()
         total_sum += stop-start
 

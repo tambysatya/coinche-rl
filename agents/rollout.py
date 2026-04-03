@@ -39,12 +39,15 @@ def mk_step(policy_model):
               current_score,total_score, 
               key):
         """ The current player plays a card """
+
         obs = Observation(trick_obs(trick), current_score, total_score, hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trump, trick)
         action_mask = legal_moves.reshape([-1,32])
+
         logits, next_hidden_state = policy(trump, obs)
+
         logits = jnp.where(action_mask,
                            logits,
                            -jnp.inf)
@@ -56,16 +59,49 @@ def mk_step(policy_model):
         record = Step(obs, action, action_mask, jnp.log(probas))
 
         return (next_hidden_state, play(trump, trick, card)), record
-    
+
     return jax.jit(step)
 
-        
-def mk_trick_rollout (policy_model):
-    """ Plays a full trick (the 4 players chose a card) """
-    step = mk_step(policy_model)
 
-    def trick_rollout (params,
-                       initial_hidden, # previous hidden state
+def mk_league_step (policy_model, pool_size):
+
+    agent_step = mk_step(policy_model)
+
+    def step (all_params, # [P, Params]
+              agent_index, # [B] : index of the agent that plays this turn
+              hidden_state, #[B, ...] hidden state of the agent
+              trump : Suit, trick : Trick, current_score, total_score,
+              key):
+        
+        batch_size = trump.shape[0]
+        permutation = agent_index.argsort()
+        sorted_hidden = hidden_state[permutation]
+        sorted_hidden = sorted_hidden.reshape([pool_size,  batch_size // pool_size, -1])
+
+        batch_per_agent = jtu.tree_map(
+                                  lambda l : l[permutation].reshape(pool_size, batch_size // pool_size, *(l.shape[1:])),
+                                  (hidden_state, trump, trick, current_score, total_score))
+
+        hidden_state, trump, trick, current_score, total_score = batch_per_agent # [(P, B, ...)]
+        ret, record = jax.vmap(agent_step)(all_params, hidden_state, trump, trick, current_score, total_score, rnd.split(key,pool_size))
+
+        ret, record = jtu.tree_map(
+                            lambda l : (l.reshape(batch_size, *(l.shape[2:])).squeeze())[permutation],
+                            (ret, record))
+
+        return ret, record
+
+    return jax.jit(step)
+        
+
+        
+def mk_trick_rollout (policy_model, pool_size):
+    """ Plays a full trick (the 4 players chose a card) """
+    step = mk_league_step(policy_model, pool_size)
+
+    def trick_rollout (all_params,
+                       agent_indices : Int [Array, "B 2"], # agents that play Team0 and Team1
+                       initial_hidden, #  [B, 4, ...] previous hidden state for each player
                        trump : Suit,
                        team_score, # [score_team_0, score_team_1]
                        total_score,
@@ -76,13 +112,17 @@ def mk_trick_rollout (policy_model):
 
 
         def scan_step (carry, step_seed):
-            prev_hidden, prev_trick = carry
-            player_score = jax.vmap(lambda s, p: s[p])(team_score, prev_trick.current_player%2) # scores of the current player
+            all_hidden, prev_trick = carry
+            cur_team = prev_trick.current_player % 2
+            player_score, agent_index = jax.vmap(lambda s, a, p: (s[p], a[p]))(team_score, agent_indices, cur_team) # extracts the scores and index of the current player
+            player_hidden = jax.vmap(lambda h, p: h[p])(all_hidden, prev_trick.current_player) #extracts the hidden state of the current player
 
-            (new_hidden, new_trick), new_record = step(params, prev_hidden,
+            (new_hidden, new_trick), new_record = step(all_params, agent_index, 
+                                                       player_hidden,
                                                        trump, prev_trick,
                                                        player_score, total_score,
                                                        step_seed)
+            new_hidden = jax.vmap(lambda a, h, p: a.at[p].set(h))(all_hidden, new_hidden, prev_trick.current_player) #updates the hidden state of the playing agent
             return (new_hidden, new_trick) , new_record
 
         final, trajectory_records = jax.lax.scan(scan_step, (initial_hidden, trick), rnd.split(seed, 4) )
@@ -94,16 +134,18 @@ def mk_trick_rollout (policy_model):
     return jax.jit(trick_rollout)
         
 
-def mk_rollout (policy_model):
-    trick_rollout = mk_trick_rollout(policy_model)
+def mk_rollout (policy_model, pool_size):
+    trick_rollout = mk_trick_rollout(policy_model, pool_size)
 
-    def rollout (params,
-                 initial_hidden_state,
+    def rollout (all_params, # Params of each agent of the pool: [P, ...]
+                 agent_indices : Int [Array, "B 2"], # Pair of agent for each game
+                 initial_hidden_state, # [B, 4, ...] hidden state of each player, for each game
                  trump : Suit, initial_player : Player, initial_hands : Hand,
                  seed):
         """ Simulates a complete trick phase (8 tricks):
-                input : - parameters of the policy network
-                        - user-defined hidden_state, also passed to the policy network
+                input : - parameters of the each policy network
+                        - batch of pair of indices describing which agent plays on each game
+                        - batch of 4 user-defined hidden_state, also passed to the policy network
                         - initial conditions of the game: trump suit, starting player, and cards distributions
                 returns: - the complete tricks among the trajectory: it is the resulting trick where all 4 players played a card
                          - the observations records among the trajectory (4 per trick)
@@ -120,7 +162,8 @@ def mk_rollout (policy_model):
         def scan_step (carry, trick_seed):
             prev_hidden, prev_trick, prev_scores, prev_total_score = carry 
             (next_hidden, finished_trick), trajectory_records = trick_rollout (
-                                                                  params, prev_hidden,
+                                                                  all_params, agent_indices,
+                                                                  prev_hidden,
                                                                   trump,
                                                                   prev_scores, #score of both teams
                                                                   prev_total_score,
