@@ -17,28 +17,6 @@ from agents.rollout import *
 def mk_train_critic(critic_mdl):
     graphdef, _ = nnx.split(critic_mdl)
     
-    @jax.jit
-    def loss_function (params, 
-                       trump, step, reward):
-        critic = nnx.merge(graphdef, params)
-        pred = critic(trump, step.obs)
-        return ((pred - reward)**2).mean()
-
-
-    @partial(jax.jit, static_argnames=['optimizer'])
-    def epoch_train (optimizer,
-                     initial_carry, # = initial_params, initial_opt_state,
-                     batched_dataset):
-        trump, step, reward = batched_dataset
-        def batch_scan(carry, batch_index):
-            params, opt_state = carry
-            step_batch = jtu.tree_map(lambda l: l[batch_index], step)
-            value, grads = jax.value_and_grad(loss_function)(params,trump[batch_index], step_batch, reward[batch_index])
-            updates, opt_state = optimizer.update(grads, opt_state)
-            params = optax.apply_updates(params, updates)
-            return (params, opt_state), value 
-        final_carry, values = jax.lax.scan(batch_scan, initial_carry, jnp.arange(trump.shape[0]))
-        return final_carry, values.mean()
 
 
 
@@ -50,6 +28,8 @@ def mk_train_critic(critic_mdl):
         return trump, step, reward
 
 
+    
+    @partial(jax.jit, static_argnames=['batch_size', 'lr', 'n_epoch'])
     def train_critic(params, 
                      trump,step, reward,
                      n_epoch,batch_size=32,
@@ -59,10 +39,31 @@ def mk_train_critic(critic_mdl):
         
         batched_dataset = batch_dataset(trump, step, reward, batch_size)
 
+        def epoch_train (initial_carry, # = initial_params, initial_opt_state,
+                         batched_dataset):
+
+            trump, step, reward = batched_dataset
+
+            def loss_function (params, 
+                               trump, step, reward):
+                critic = nnx.merge(graphdef, params)
+                pred = critic(trump, step.obs)
+                return ((pred - reward)**2).mean()
+
+
+            def batch_scan(carry, batch_index):
+                params, opt_state = carry
+                step_batch = jtu.tree_map(lambda l: l[batch_index], step)
+                value, grads = jax.value_and_grad(loss_function)(params,trump[batch_index], step_batch, reward[batch_index])
+                updates, opt_state = optimizer.update(grads, opt_state)
+                params = optax.apply_updates(params, updates)
+                return (params, opt_state), value 
+            return jax.lax.scan(batch_scan, initial_carry, jnp.arange(trump.shape[0]))
+     
+
         print (f"Critic optimization:")
         for i in range(n_epoch):
-            (params, opt_state), value = epoch_train(optimizer, (params, opt_state), batched_dataset)
-            print (f"[epoch={i}] loss: {value}")
+            (params, opt_state), value = epoch_train((params, opt_state), batched_dataset)
 
         return params
 
@@ -84,7 +85,6 @@ def mk_train_actor (actor_mdl, critic_mdl):
                   trump, records, advantages,
                   eps=0.2):
         new_policy = nnx.merge(actor_graphdef, actor_current_params)
-        jax.debug.print("records: {} ", records.obs.current_score.shape)
         logits, _ = new_policy(trump, records.obs)
         logits = jnp.where(records.action_mask,
                            logits,
@@ -99,36 +99,6 @@ def mk_train_actor (actor_mdl, critic_mdl):
         loss = -jnp.mean(jnp.minimum(unclipped, clipped))
         return loss
 
-
-    @partial(jax.jit, static_argnames=['optimizer'])
-    def batch_scan (optimizer, #partially applied
-                    batched_dataset, #partially applied
-                    eps, #partially applied
-                    carry,
-                    batch_index):
-        trump, records, advantages = batched_dataset
-        params, opt_state = carry
-
-        trump, advantages = trump[batch_index], advantages[batch_index]
-        records = jtu.tree_map(lambda l: l[batch_index], records)
-
-        loss, grads = jax.value_and_grad(ppo_loss)(params, trump, records, advantages, eps=eps)
-        updates, opt_state = optimizer.update(grads, opt_state)
-        params = optax.apply_updates(params, updates)
-
-        return (params, opt_state), loss.mean()
-
-
-    @partial(jax.jit, static_argnames=['optimizer'])
-    def epoch_train (optimizer, batched_dataset, params, opt_state, eps=0.2):
-        trumps, _, _ = batched_dataset
-        batch_size = trumps.shape[0]
-        ret, loss = jax.lax.scan(partial(batch_scan, optimizer, batched_dataset, eps),
-                                 (params, opt_state),
-                                 jnp.arange(batch_size))
-        return ret, loss.mean()
-
-
     @partial(jax.jit, static_argnames=['batch_size'])
     def batch_dataset(critic_current_params, trump, records, rewards, batch_size):
         trump, rewards = mk_minibatches(trump, batch_size), mk_minibatches(rewards, batch_size)
@@ -142,6 +112,7 @@ def mk_train_actor (actor_mdl, critic_mdl):
 
 
 
+    @partial(jax.jit, static_argnames=['batch_size', 'lr', 'n_epoch', 'eps'])
     def train_actor (critic_current_params, actor_current_params,
                      trump, records, rewards,
                      n_epoch, batch_size=32,
@@ -151,13 +122,36 @@ def mk_train_actor (actor_mdl, critic_mdl):
         params = actor_current_params
 
         trump, records, advantages = batch_dataset(critic_current_params, trump, records, rewards, batch_size)
+
+
+        def batch_scan (dataset,
+                        carry,
+                        batch_index):
+            params, opt_state = carry
+
+            trump, records, advantages = dataset
+            trump, advantages = trump[batch_index], advantages[batch_index]
+            records = jtu.tree_map(lambda l: l[batch_index], records)
+
+            loss, grads = jax.value_and_grad(ppo_loss)(params, trump, records, advantages, eps=eps)
+            updates, opt_state = optimizer.update(grads, opt_state)
+            params = optax.apply_updates(params, updates)
+
+            return (params, opt_state), loss.mean()
+
+
+        def epoch_train (dataset, params, opt_state):
+            batch_size = trump.shape[0]
+            ret, loss = jax.lax.scan(partial(batch_scan, dataset),
+                                     (params, opt_state),
+                                     jnp.arange(batch_size))
+            return ret, loss.mean()
+
+
+
         print (f"Actor optimization:")
         for i in range(n_epoch):
-            (params, opt_state), value = epoch_train(optimizer,
-                                                      (trump, records, advantages),
-                                                      params, opt_state,
-                                                      eps)
-            print (f"[epoch={i}] loss: {value}")
+            (params, opt_state), value = epoch_train((trump, records, advantages),params, opt_state)
 
 
     return train_actor
