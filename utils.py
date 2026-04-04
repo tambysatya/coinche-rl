@@ -49,4 +49,9 @@ def ungroup_dataset_by_agent(permutation : Int[Array, "B"],
     return jtu.tree_map(lambda l: l.reshape(l.shape[0]*l.shape[1], *l.shape[2:]).squeeze()[permutation] , grouped_dataset)
 
 
+@jax.jit
+def custom_column (array : jax.Array, indices : Int [Array, "B"])
+    """ Creates a column where each row i is the value at array[indice[i]] """
+    return jax.vmap(lambda a,i: a[i])(array, indices)
+
 
