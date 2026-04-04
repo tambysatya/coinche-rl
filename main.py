@@ -4,7 +4,7 @@ from coinche.Hand import *
 from coinche.Trick import *
 from coinche.LegalMoves import *
 
-from agents.rollout import *
+from agents.rollout.trick import *
 from agents.basic_agent import *
 from agents.train import *
 
