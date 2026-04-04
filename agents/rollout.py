@@ -143,13 +143,13 @@ def mk_rollout (policy_model, pool_size):
     trick_rollout = mk_trick_rollout(policy_model, pool_size)
 
     def rollout (all_params, # Params of each agent of the pool: [P, ...]
-                 agent_indices : Int [Array, "B 2"], # Pair of agent for each game
+                 permutations : Int [Array, "B 2"], # Pair of agent for each game
                  initial_hidden_state, # [B, 4, ...] hidden state of each player, for each game
                  trump : Suit, initial_player : Player, initial_hands : Hand,
                  seed):
         """ Simulates a complete trick phase (8 tricks):
                 input : - parameters of the each policy network
-                        - batch of pair of indices describing which agent plays on each game
+                        - sorted permutation of indices describing which agent plays on each game (obtained by argsorting the indices of which agent play each team of each game)
                         - batch of 4 user-defined hidden_state, also passed to the policy network
                         - initial conditions of the game: trump suit, starting player, and cards distributions
                 returns: - the complete tricks among the trajectory: it is the resulting trick where all 4 players played a card
@@ -163,7 +163,6 @@ def mk_rollout (policy_model, pool_size):
         initial_total_score = jnp.zeros([batch_size])
         initial_trick = new_trick (initial_player, initial_hands)
 
-        permutations = agent_indices.argsort(axis=1) # computes one for all the permutations in order to easily reorder the batch by consecutive players
 
 
         def scan_step (carry, trick_seed):
@@ -244,19 +243,24 @@ def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
     return jax.vmap(cumulative_sum)(jnp.arange(8))
 
 
-def mk_collect_samples(policy_mdl):
-    rollout = mk_rollout(policy_mdl)
+def mk_collect_samples(policy_mdl, pool_size):
+    rollout = mk_rollout(policy_mdl, pool_size)
 
     def collect_samples (
             discount_factor,
-            params,
+            all_params,
+            agent_indices : Int [Array, "B 2"], # specifies which pair of agent plays each game
             initial_hidden_state,
             trump : Suit, initial_player : Player, initial_hands : Hand,
             seed):
         """ Samples rollouts, and generates a dataset [state, cumulative_reward] """
 
         batch_size = trump.shape[0]
-        traj_tricks, traj_records = rollout(params, initial_hidden_state,
+
+        permutations = agent_indices.argsort(axis=1) # computes one for all the permutations in order to easily reorder the batch by consecutive players
+
+        traj_tricks, traj_records = rollout(all_params, permutations,
+                                            initial_hidden_state,
                                             trump, initial_player, initial_hands, seed)
         rewards = transition_rewards(trump, traj_tricks, traj_records)
         rewards = cumulative_rewards(rewards, discount_factor)

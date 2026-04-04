@@ -36,6 +36,7 @@ def test(batch_size=4, pool_size=2, seed=seed):
     initial_params = generate_actor_pool(pool_size)
     agent_indices = jnp.zeros([batch_size], dtype=int)
     game_indices = jnp.concat([jnp.zeros([batch_size,1]), jnp.ones([batch_size,1])], axis=1)
+    permutations = game_indices.argsort(axis=1)
     seed, key = rnd.split(seed)
     trumps = jnp.zeros(batch_size, dtype=int)
     trick = new_trick(jnp.zeros(batch_size, dtype=int), deal(rnd.split(key, batch_size)))
@@ -48,7 +49,7 @@ def test(batch_size=4, pool_size=2, seed=seed):
     #return rollout_full(params, initial_hidden_state, trumps, initial_players, initial_hands, seed)
     #return league_step(initial_params, agent_indices, initial_hidden_state, trumps, trick, initial_scores[0], total_score, key)
     #return rollout(initial_params, game_indices, initial_hidden_state, trumps, initial_scores, total_score, initial_players, initial_hands, key)
-    return rollout_full(initial_params, game_indices, initial_hidden_state, trumps, initial_players, initial_hands, seed)
+    return rollout_full(initial_params, permutations, initial_hidden_state, trumps, initial_players, initial_hands, seed)
 
 
 def statistics (batch_size, pool_size, n_epoch, seed=seed):
@@ -86,17 +87,25 @@ def dbg_scan(batch_size=1, seed=seed):
 
 
 
-def test_samples(batch_size=32, discount_factor=0.9, seed=seed):
+def test_samples(pool_size = 8, game_per_pair=5, discount_factor=0.9, seed=seed):
+
+    batch_size = game_per_pair*(pool_size ** 2)
+    agents_indices = jnp.indices((pool_size, pool_size)).T
+    agents_indices = jnp.tile(agents_indices,(1,1,game_per_pair)).reshape([batch_size,2])
+
+    all_params = generate_actor_pool(pool_size)
+
+
     players = jnp.zeros(batch_size,dtype=int)
     trump = jnp.zeros(batch_size,dtype=int)
     hidden_states = jnp.zeros([batch_size,1])
 
-    collect_samples = mk_collect_samples(policy_mdl)
+    collect_samples = mk_collect_samples(policy_mdl, pool_size)
 
     seed, key = rnd.split(seed)
 
     records, rewards = collect_samples(discount_factor, 
-                                       nnx.state(policy_mdl),
+                                       all_params, agents_indices,
                                        hidden_states, trump, players, deal(rnd.split(key,batch_size)), seed)
 
     return records, rewards
