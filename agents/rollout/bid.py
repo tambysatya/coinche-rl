@@ -52,7 +52,7 @@ def mk_bid_rollout(bidding_model, pool_size):
         batch_size = current_player.shape[0]
         obs = BidObs (hidden_state, best_bid, best_player, checked, player_hand)
         bid_policy = nnx.merge(graphdef, param)
-        output, hidden_state = bid_policy(obs)
+        output, new_hidden_state = bid_policy(obs)
         logit_pass, logit_suit, logit_rank = output
 
         has_someone_placed_p = jnp.any(best_bid.rank, axis=1)
@@ -91,13 +91,15 @@ def mk_bid_rollout(bidding_model, pool_size):
         logprob_pass = jnp.log(jax.nn.softmax(logit_pass))
         logprob_suit = jnp.log(jax.nn.softmax(logit_suit))
         logprob_rank = jnp.log(jax.nn.softmax(logit_rank))
-        return new_bid, BidStep(obs,
-                            new_bid, 
-                            jnp.where (has_someone_placed_p,
-                                 jnp.zeros([batch_size]), #log (1)
-                                 jnp.where (pass_p,
-                                    logprob_pass[:,1],
-                                    logprob_pass[:,0]+logprob_suit[:,suit] + logprob_rank[:,rank]))) # p(not_pass)*p(suit)*p(rank)
+        return (new_hidden_state,
+                new_bid,
+                BidStep(obs,
+                        new_bid, 
+                        jnp.where (has_someone_placed_p,
+                                   jnp.zeros([batch_size]), #log (1)
+                                   jnp.where (pass_p,
+                                              logprob_pass[:,1],
+                                              logprob_pass[:,0]+logprob_suit[:,suit] + logprob_rank[:,rank])))) # p(not_pass)*p(suit)*p(rank)
 
 
     return jax.jit(predict_bid)
