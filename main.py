@@ -5,6 +5,7 @@ from coinche.Trick import *
 from coinche.LegalMoves import *
 
 from agents.rollout.trick import *
+from agents.rollout.bid import *
 from agents.basic_agent import *
 from agents.train import *
 
@@ -19,6 +20,8 @@ from tqdm import tqdm
 seed = rnd.key(0)
 policy_mdl = BasicAgent(10, nnx.Rngs(0))
 critic_mdl = BasicCritic(10, nnx.Rngs(0))
+
+bid_policy_mdl = BidAgent(10,nnx.Rngs(0))
 
 
 def generate_actor_pool (pool_size):

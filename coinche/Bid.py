@@ -7,7 +7,7 @@ import jax.tree_util as jtu
 from jaxtyping import Array, Bool, Int, Float
 
 from utils import *
-from coinche.Hands import *
+from coinche.Hand import *
 
 # Bidding system:
 #   - 3 policy network: for bidding, coinching and overcoinching
@@ -28,9 +28,12 @@ TensorBid = Bool [Array, "B 62"] # 60 + Coinche + Overcoinche
 
 @struct.dataclass
 class Bid:
-    """ A bid made by a player """
-    suit : Int [Array, "B"] # [0,5] total 6: all 4 suits + ALL_TRUMP + NO_TRUMP 
-    rank : Int [Array, "B"] #0-8 total 9: from 80 to 160 (8 calls) + ALL_IN 
+    """ A bid made by a player
+        The "PASS" bid is equal to "False" everywhere
+    """
+    suit : Bool [Array, "B 6"] # one-hot [0,5] total 6: all 4 suits + ALL_TRUMP + NO_TRUMP 
+    rank : Bool [Array, "B 9"] #one-hot 0-8 total 9: from 80 to 160 (8 calls) + ALL_IN 
+    author : Int [Array, "B"] # index of the player who called this bid
 
 
 @struct.dataclass
@@ -54,7 +57,7 @@ class BidEntry:
 @struct.dataclass
 class BidState:
     """ State of the game during the bidding phase """
-    turn :: Int [Array, "B"]  # index of the current turn
+    turn : Int [Array, "B"]  # index of the current turn
     current_player : Int [Array, "B"]
     best_bid : Bid
     best_player : Int [Array, "B"]
@@ -84,50 +87,6 @@ def history_to_tensor(history : BidEntry):
                     ], axis=1)
 
 def bid_to_tensor (bid : Bid):
-    return jnp.concatenate([jnp.one_hot(bid.suit,6),
-                            jnp.one_hot(bid.rank, 9)], axis=1)
-
-def mk_coinche_rollout(coinche_mdl, pool_size):
-    graphdef, _ = nnx.split(coinche_mdl)
-
-    def coinche_p (player_coinche_param,
-                   player_hand : Hand,
-                   history : BidEntry,
-                   bid : Bid,
-                   key):
-        coinche_actor = nnx.merge(graphdef, player_coinche_param)
-        obs = CoincheObs(player_hand, history, bid)
-        logit = coinche_actor(obs)
-        action = rnd.categorical(key, jnp.array([1-logit, logit]))
-        return action, Step(obs, action, jnp.log(logit))
-
-
-    def coinche_rollout (all_coinche_params,
-                         all_overcoinche_params,
-                         permutation,
-                         bidding_player : Int [Array, "B"], # the player who announced
-                         hand : Hand , # Hand of all the 4 players
-                         history : BidEntry,  #previous bidding
-                         bid : Bid,
-                         seed) -> BidEntry:
-        """ Asks the other teams if they coinche """
-        
-        first_player = (1+bidding_player) % 2
-        second_player = (first_player + 2) % 2
-
-        defense_team_permutation = permutation[first_player % 2]
-        bidding_team_permutation = permutation[bidding_player % 2]
-
-
-        defense_first_hand, defense_second_hand = jax.vmap(lambda h, f, s = h[f], h[s])(hand, first_player, second_player)
-        defense_first_hand, defense_second_hand, history, bid = group_dataset_by_agent(pool_size, defense_team_permutation, (defense_first_hand, defense_second_hand, history, bid))
-
-        def1, def2, bid1, bid2 = rnd.split(seed, 4)
-        defense_first_coinche = jax.vmap(coinche_p)(all_coinche_params, defense_first_hand, history, bid, def1)
-        defense_snd_coinche = jax.vmap(coinche_p)(all_coinche_params, defense_second_hand, history, bid, def2)
-
-        bidding_first_hand, bidding_second_hand = jax.vmap(lambda h, f, s = h[f], h[s])(hand, current_player, (current_player + 2) %2)
-        bidding_first_hand, bidding_second_hand, history, bid = group_dataset_by_agent(pool_size, bidding_team_permutation, (bidding_first_hand, bidding_second_hand, history, bid))
-        
-                         
+    return jnp.concatenate([bid.suit,
+                            bid.rank], axis=1)
 
