@@ -88,5 +88,6 @@ def history_to_tensor(history : BidEntry):
 
 def bid_to_tensor (bid : Bid):
     return jnp.concatenate([bid.suit,
-                            bid.rank], axis=1)
+                            bid.rank,
+                            jax.nn.one_hot(bid.author,4)], axis=1)
 

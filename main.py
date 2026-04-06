@@ -24,8 +24,8 @@ critic_mdl = BasicCritic(10, nnx.Rngs(0))
 bid_policy_mdl = BidAgent(10,nnx.Rngs(0))
 
 
-def generate_actor_pool (pool_size):
-    pool = [nnx.state(BasicAgent(10,nnx.Rngs(0))) for i in range (pool_size)]
+def generate_actor_pool (pool_size, model=policy_mdl):
+    pool = [nnx.state(model) for i in range (pool_size)]
     return jtu.tree_map(lambda *f: jnp.stack(f), *pool)
 
 
@@ -134,6 +134,29 @@ def test_ppo (n_trajectory_samples=32, batch_size=32, n_epoch=100, discount_fact
                                trumps, records, rewards,
                                n_epoch, batch_size=batch_size, lr=lr, eps=eps)
 
+
+
+
+def test_bid(pool_size=2, game_per_pair=3, seed=seed):
+    all_params = generate_actor_pool(pool_size, model=bid_policy_mdl)
+    batch_size = game_per_pair*(pool_size ** 2)
+
+    agent_indices = jnp.indices((pool_size, pool_size)).T
+    agent_indices = jnp.tile(agent_indices,(1,1,game_per_pair)).reshape([batch_size,2])
+    permutation = agent_indices.argsort(axis=1)
+
+    seed, key = rnd.split(seed)
+    hands = deal(rnd.split(key, batch_size))
+    hidden_states = jnp.zeros([batch_size, 4, 5])
+    initial_bid = Bid(jnp.zeros([batch_size, 6], dtype=bool), jnp.zeros([batch_size, 9], dtype=bool), jnp.zeros([batch_size], dtype=int))
+    checked = jnp.zeros([batch_size, 4], dtype=bool)
+
+    current_player = jnp.zeros([batch_size], dtype=int)
+
+    bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
+    return bid_scan(all_params, permutation, hands,
+                    (hidden_states, initial_bid, checked, seed),
+                    current_player)
 
 
 

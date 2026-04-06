@@ -17,7 +17,6 @@ class BidObs:
     """A partial observation of a bid"""
     hidden_state : jax.Array
     bid : Bid
-    author :  Int [Array, "B"] #who placed this bid
     checked : Bool [Array, "B 4"] #one-hot encoding of which player has already checked
     hand : Hand
 
@@ -39,18 +38,64 @@ def mk_bid_rollout(bidding_model, pool_size):
     """
     graphdef, _ = nnx.split(bidding_model)
 
+    def bid_rollout (all_params,
+                     permutation,
+                     hands,
+                     initial_player):
+         pass
+    @jax.jit
+    def bid_scan (all_params,
+                  permutation, # to regroup everything by agent
+                  hands : Int [Array, "B 4 4 8"], # 4 hands
+                  carry, #4 hidden state, best_bid, 4 checked flag, key
+                  current_player : Int [Array, "B"]):
+         hidden_states, best_bid, checked, seed = carry
+
+         seed, key = rnd.split(seed)
+
+         has_everyone_checked_p = jnp.all(checked, axis=1)
+
+         #extracts the hand and the hidden state of the current player, as well as the permutation (~ the index of the agent playing its team)
+         player_hand, player_hidden, permutation = jax.vmap(lambda h,hid,p, per: (h[p], hid[p], per[p%2]))(hands, hidden_states, current_player, permutation)
+
+         # regroup by agent [P, B/P, ...] then evaluates the batch before restoring the original order
+         dataset = group_dataset_by_agent(pool_size, permutation, 
+                                    (current_player, player_hand, player_hidden, best_bid, checked))
+         #current_player, player_hand, player_hidden, best_bid, checked = dataset
+
+         play = jax.vmap(predict_bid)(all_params, rnd.split(key, pool_size), *dataset)
+         player_hidden, new_bid, step = ungroup_dataset_by_agent(permutation, play)
+
+         # updates the hidden states and the *checked* status of each player
+         has_player_checked = jnp.any(new_bid.rank, axis=1) == False
+         hidden_states, checked = jax.vmap(lambda p,hid,check, player_hid, player_check: 
+                                                (hid.at[p].set(player_hid), check.at[p].set(player_check)))(
+                                          current_player,
+                                          hidden_states,checked, 
+                                          player_hidden, has_player_checked)
+        # if all 4 players have already passed, the best_bid cannot change
+        # ditto if the current decided to check
+         best_bid = jtu.tree_map(lambda old, new:
+                                    jnp.where(has_everyone_checked_p[:,None] | has_player_checked[:,None], 
+                                    old,new),
+                                 best_bid, new_bid)
+        
+         new_carry = hidden_states, best_bid, checked, seed   
+         return new_carry, step
+                  
+                  
     @jax.jit
     def predict_bid (param,
+                     key,
                      current_player : Int [Array, "B"],
                      player_hand : Hand,
                      hidden_state,
                      best_bid : Bid,
-                     best_player : Int [Array, "B"],
                      checked : Bool [Array, "B 4"], #who checked before
-                     key):
+                     ):
         """ Infers a bid through the policy network."""
         batch_size = current_player.shape[0]
-        obs = BidObs (hidden_state, best_bid, best_player, checked, player_hand)
+        obs = BidObs (hidden_state, best_bid, checked, player_hand)
         bid_policy = nnx.merge(graphdef, param)
         output, new_hidden_state = bid_policy(obs)
         logit_pass, logit_suit, logit_rank = output
@@ -73,21 +118,18 @@ def mk_bid_rollout(bidding_model, pool_size):
         suit = rnd.categorical(key_suit, logit_suit)
         rank = rnd.categorical(key_rank, logit_rank)
 
-        # empty bid if the player "pass" or if the player cannot raise (e.g. all_in somewhere)
-        pass_bid = Bid(jnp.zeros([batch_size,6], dtype=bool),
-                       jnp.zeros([batch_size,9], dtype=bool),
-                       current_player)
-
-        # the bid sampled by the network
-        raise_bid = Bid(jax.nn.one_hot(suit,6).astype(bool),
-                        jax.nn.one_hot(rank,9).astype(bool),
-                        current_player)
-
         has_to_pass_p = pass_p | has_someone_placed_allin_p
-        new_bid = jtu.tree_map(lambda pass_b, raise_b:
-                                    jnp.where (has_to_pass_p[:,None],
-                                               pass_b, raise_b),
-                                pass_bid, raise_bid)
+           
+        # If the player does not or cannot raise (someone called allin), the one-hot encoding of
+        # both the suit and rank are all FALSE
+        new_suit = jnp.where(has_to_pass_p[:,None],
+                             jnp.zeros([batch_size,6], dtype=bool),
+                             jax.nn.one_hot(suit, 6).astype(bool))
+        new_rank = jnp.where(has_to_pass_p[:,None],
+                             jnp.zeros([batch_size,9], dtype=bool),
+                             jax.nn.one_hot(rank, 9).astype(bool))
+        new_bid = Bid(new_suit, new_rank, current_player)
+
         logprob_pass = jnp.log(jax.nn.softmax(logit_pass))
         logprob_suit = jnp.log(jax.nn.softmax(logit_suit))
         logprob_rank = jnp.log(jax.nn.softmax(logit_rank))
@@ -102,7 +144,7 @@ def mk_bid_rollout(bidding_model, pool_size):
                                               logprob_pass[:,0]+logprob_suit[:,suit] + logprob_rank[:,rank])))) # p(not_pass)*p(suit)*p(rank)
 
 
-    return jax.jit(predict_bid)
+    return bid_scan
 
 
                        

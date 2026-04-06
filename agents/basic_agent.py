@@ -30,15 +30,13 @@ class BasicCritic (nnx.Module):
 
 class BidAgent (nnx.Module):
     def __init__(self, hid_feats, rngs, n_hid = 1):
-        in_feats = 54 # obs tensor
+        in_feats = 55 # obs tensor
         out_feats = 16
         self.mlp = MLP(in_feats, hid_feats, out_feats, rngs, n_hid=n_hid)
 
     @nnx.jit
     def __call__ (self, obs): 
-        x = jnp.concat([obs.hidden_state,
-                        bid_to_tensor(obs.bid), 
-                        obs.author[:,None],
+        x = jnp.concat([bid_to_tensor(obs.bid), 
                         obs.checked,
                         obs.hand.reshape([-1,32])],
                         axis=1)
