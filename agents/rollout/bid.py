@@ -41,8 +41,21 @@ def mk_bid_rollout(bidding_model, pool_size):
     def bid_rollout (all_params,
                      permutation,
                      hands,
-                     initial_player):
-         pass
+                     hidden_states,
+                     initial_player,
+                     seed):
+         batch_size = initial_player.shape[0]
+         n_calls = 4 * 10  # total call = every players pass except the last one
+         players = jnp.tile(jnp.arange(4), (batch_size, 10))
+
+         empty_bid = Bid (jnp.zeros([batch_size, 6], dtype=bool),
+                          jnp.zeros([batch_size, 9], dtype=bool),
+                          (initial_player - 1 % 4))
+         carry0 = hidden_states, empty_bid, jnp.zeros([batch_size,4], dtype=bool), seed 
+         hidden_states, best_bid, checked, seed = jax.scan(partial(bid_scan, all_params, permutation, hands),
+                                                           carry0, players)
+
+
     @jax.jit
     def bid_scan (all_params,
                   permutation, # to regroup everything by agent
