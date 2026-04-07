@@ -63,13 +63,6 @@ def bid_is_a_pass (bid : Bid) -> Bool [Array, "B"]:
 
 # -------------* Utils for History manipulation *----------------- #
 
-@jax.jit
-def history_get (history : BidHistory,
-                 index : Int [Array, "B"]) -> Bid :
-    """ Extracts the entries at a specific (batched) index from a (batched) history."""
-    return jtu.tree_map(lambda leave:  jax.vmap(lambda l, i : l[i])(leave, index),
-                history.entries)
-@jax.jit
 def history_modify_at (history : BidHistory,
                        bid : Bid,
                        index : Int [Array, "B"]):
@@ -77,11 +70,7 @@ def history_modify_at (history : BidHistory,
         Sets history_i[j] = bid[i] for j=index[i]
         Warning: sets the current pointer to the specified index
     """
-    entries = jtu.tree_map(
-                    lambda h, b: jax.vmap(
-                        lambda leave, val, idx : leave.at[idx].set(val))(h, b, index),
-                    history.entries, bid)
-
+    entries = database_set (history.entries, bid, index)
     return BidHistory(entries, index) 
 
 @jax.jit

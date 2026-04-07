@@ -48,3 +48,34 @@ def ungroup_dataset_by_agent(permutation : Int[Array, "B"],
     """ Undo group_dataset_by_agent """
     return jtu.tree_map(lambda l: l.reshape(l.shape[0]*l.shape[1], *l.shape[2:]).squeeze()[permutation] , grouped_dataset)
 
+
+@jax.jit
+def database_get (database, # batch of databases
+                  position : Int [Array, "B"]):
+    """ Extracts the entries at a specific (batched) index from a (batched) database.
+        Input:
+            database : B N Entry = batch of databases of size N
+            index : B Int
+        Output:
+            The entry corresponding to the index
+    """
+    return jtu.tree_map(lambda leave:  jax.vmap(lambda l, i : l[i])(leave, position),
+                database)
+@jax.jit
+def database_set (database,
+                  new_entry,
+                  position : Int [Array, "B"]):
+    """ Modify the entry at a given index of a database
+        Sets history_i[j] = bid[i] for j=index[i]
+        input : 
+            database : B N Entry = batch of database of size N 
+            new_entry : B Entry = batch of entry (to be inserted)
+            position : B Int = batch of positions 
+    """
+    return  jtu.tree_map(
+                    lambda h, b: jax.vmap(
+                        lambda leave, val, idx : leave.at[idx].set(val))(h, b, position),
+                    database, new_entry)
+
+
+
