@@ -65,7 +65,7 @@ def database_get (database, # batch of databases
 def database_set (database,
                   new_entry,
                   position : Int [Array, "B"]):
-    """ Modify the entry at a given index of a database
+    """ Replaces the entry at a given index of a database
         Sets history_i[j] = bid[i] for j=index[i]
         input : 
             database : B N Entry = batch of database of size N 
