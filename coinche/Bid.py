@@ -10,33 +10,32 @@ from utils import *
 from coinche.Hand import *
 
 # Bidding system:
-#   - 3 policy network: for bidding, coinching and overcoinching
+#   - 3 policy: for bidding, coinching and overcoinching
 # Representations:
-#   - Total representation : [Suit, Rank, Who checked, Who coinched, Who overcoinched]
-#   - for bidding and coinching : [Suit, Rank, Who checked]
-#   - for overcoinching : [Suit, Rank, Who checked, Who coinched]
+#   - A bid is store in the history
+#   - A players "passes" a bid by modifying the corresponding flag of the bid
+#   - "Coinching" a bid is done by reinitializing the "passing" flags, and setting one "coinching" flag to True
+#   - "Overcoinching" a bid is done by setting the corresponding "overcoinching" flag to true
 # Total Rollout:
-#   - Someone enounce a bidding (can be a "check")
-#   - Coinche Rollout (only taken into consideration if the bidding is not a "check"):
+#   - Someone enounce a bidding (can be a "pass")
+#   - Coinche Rollout (only taken into consideration if the bidding is not a "pass"):
 #               - Each opponent has the opportunity to coinche
 #   - Overcoinche Rollout (only taken into consideration if an opponent has coinched):
 #               - Each member of the bidding team has the opportunity to overcoinched
 
 
 
-TensorBid = Bool [Array, "B 62"] # 60 + Coinche + Overcoinche
 
 @struct.dataclass
 class Bid:
     """ A bid made by a player
-        The "PASS" bid is equal to "False" everywhere
     """
     suit : Bool [Array, "B 6"] # one-hot [0,5] total 6: all 4 suits + ALL_TRUMP + NO_TRUMP 
     rank : Bool [Array, "B 10"] # one-hot 0-9 total 10: from PASS (1 call) + 80 to 160 (8 calls) + ALL_IN 
     author : Int [Array, "B"] # index of the player who called this bid
     passed : Bool [Array, "B 4"] # who passed on the bid
-    coinched : Bool [Array, "B 4"] # TODO who coinched the bid
-    overcoinched : Bool [Array, "B 4"] # TODO who overcoinched the bid
+    coinched : Bool [Array, "B 4"] # TODO (not implemented) who coinched the bid 
+    overcoinched : Bool [Array, "B 4"] # TODO (not implemented) who overcoinched the bid
 
 @struct.dataclass
 class BidHistory:
@@ -46,18 +45,36 @@ class BidHistory:
     entries : Bid # B 9 Bid
     index : Int [Array, "B"] # index of the current bid
 
+#--------------------* Predicate on history *----------------------#
+
+def history_is_empty (history : BidHistory) -> Bool [Array, "B"]:
+    return history.index == 0
+def history_can_raise (history : BidHistory) -> Bool [Array, "B"]:
+    bid = history_current_bid(history)
+    is_all_in = bid.rank[:,-1] 
+    is_coinched = bid.coinched.any(axis=-1)
+    return is_all_in | is_coinched
+def history_is_bidding_done (history : BidHistory) -> Bool [Array, "B"]:
+    bid = history_current_bid(history)
+    everyone_pass = bid.passed[:,-1]
+    overcoinched = bid.overcoinched.any(axis=-1)
+    return everyone_pass | overcoinched
+
+
+
+# -------------------* Actions on history *------------------------#
 @jax.jit
 def history_current_bid(history : BidHistory) -> Bid:
     return database_get(history.entries,history.index)
 @jax.jit
 def history_player_pass (history : BidHistory,
                          player : Int [Array, "B"]) -> BidHistory:
+    """ Modifies the current bid to specify that the specified player passed"""
     bid = history_current_bid(history)
     bid = bid.replace(passed = database_set(
                                     bid.passed, jnp.ones_like(player, dtype=bool), player))
     new_entries = database_set(history.entries, bid, history.index)
     return history.replace(entries=new_entries)
-
 @jax.jit
 def history_player_bid (history : BidHistory,
                         player : Int [Array, "B"],
@@ -74,6 +91,13 @@ def history_player_bid (history : BidHistory,
     return history.replace (index = history.index + 1,
                             entries = database_set(history.entries, bid, history.index+1))
 
+@jax.jit
+def history_legal_bid (history : BidHistory,
+                       player):
+
+    suit_mask = history
+
+    return suit_mask, rank_mask
 
 
 # -------------* Utils for Bid manipulation *----------------- #
@@ -89,14 +113,14 @@ def bid_is_a_pass (bid : Bid) -> Bool [Array, "B"]:
 # -------------* Utils for History manipulation *----------------- #
 
 def history_replace_bid (history : BidHistory,
-                         bid : Bid,
-                         index : Int [Array, "B"]):
+                         bid : Bid):
+                       
     """ Modifies the bids in a batched of 9xhistory given a batch of positions:
         Sets history_i[j] = bid[i] for j=index[i]
         Warning: sets the current pointer to the specified index
     """
     entries = database_set (history.entries, bid, index)
-    return BidHistory(entries, index) 
+    return history.replace(entries=entries)
 
 @jax.jit
 def history_initialize (dealer : Int [Array, "B"]):
