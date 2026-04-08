@@ -45,64 +45,64 @@ def mk_bid_rollout(bidding_model, pool_size):
                      seed):
          batch_size = initial_player.shape[0]
          n_calls = 4 * 10  # total call = every players pass except the last one
-         players = jnp.tile(jnp.arange(4), (batch_size, 10))
+         players_order = (initial_player[:,None] + jnp.arange(4)) % 4 # starts the rotation from the initial player
 
-         empty_bid = Bid (jnp.zeros([batch_size, 6], dtype=bool),
-                          jnp.zeros([batch_size, 9], dtype=bool),
-                          (initial_player - 1 % 4))
-         carry0 = hidden_states, empty_bid, jnp.zeros([batch_size,4], dtype=bool), seed
-         hidden_states, best_bid, checked, seed = jax.scan(partial(bid_scan, all_params, permutation, hands),
-                                                           carry0, players)
+
+
+         history = history_initialize(initial_player)
+         bidding_count = jnp.zeros_like(initial_player, dtype=int)
+
+         carry = hidden_states, bidding_count, history, seed
+         final_carry, obs = jax.lax.scan(partial(bid_scan, all_params, players_order, permutation, hands),
+                                     carry, jnp.arange(n_calls))
+
+         hidden_states, bidding_count, history, seed = final_carry
+         return hidden_states, bidding_count, history, obs
 
 
     @jax.jit
     def bid_scan (all_params,
+                  players_order,
                   permutation, # to regroup everything by agent
                   hands : Int [Array, "B 4 4 8"], # 4 hands
-                  carry, #4 hidden state, history, 4 checked flag, key
-                  current_player : Int [Array, "B"]):
-         hidden_states, history, checked, seed = carry
+                  carry, #4 hidden state, bidding_count, history, key
+                  player_index):
+
+         hidden_states, bidding_count, history, seed = carry
+         current_player = jax.vmap (lambda order: order[player_index%4])(players_order)
 
          seed, key = rnd.split(seed)
 
-         has_everyone_checked_p = jnp.all(checked, axis=1)
 
          #extracts the hand and the hidden state of the current player, as well as the permutation (~ the index of the agent playing its team)
          player_hand, player_hidden, permutation = jax.vmap(lambda h,hid,p, per: (h[p], hid[p], per[p%2]))(hands, hidden_states, current_player, permutation)
 
          # regroup by agent [P, B/P, ...] then evaluates the batch before restoring the original order
          dataset = group_dataset_by_agent(pool_size, permutation,
-                                    (current_player, player_hand, player_hidden, history, checked))
-         #current_player, player_hand, player_hidden, history, checked = dataset
+                                    (current_player, player_hand, player_hidden, bidding_count, history))
+         current_player, player_hand, player_hidden, bidding_count, history = dataset
 
          play = jax.vmap(predict_bid)(all_params, rnd.split(key, pool_size), *dataset)
-         player_hidden, new_bid, step = ungroup_dataset_by_agent(permutation, play)
+         player_hidden, bidding_count, history, step = ungroup_dataset_by_agent(permutation, play)
 
-         # updates the hidden states and the *checked* status of each player
-         has_player_checked = jnp.any(new_bid.rank, axis=1) == False
-         hidden_states, checked = jax.vmap(lambda p,hid,check, player_hid, player_check:
-                                                (hid.at[p].set(player_hid), check.at[p].set(player_check)))(
+         # updates the hidden states of each player
+         hidden_states = jax.vmap(lambda p,hid,player_hid:
+                                                hid.at[p].set(player_hid))(
                                           current_player,
-                                          hidden_states,checked,
-                                          player_hidden, has_player_checked)
-        # if all 4 players have already passed, the best_bid cannot change
-        # ditto if the current decided to check
-         best_bid = jtu.tree_map(lambda old, new:
-                                    jnp.where(has_everyone_checked_p[:,None] | has_player_checked[:,None],
-                                    old,new),
-                                 best_bid, new_bid)
+                                          hidden_states,
+                                          player_hidden)
 
-         new_carry = hidden_states, best_bid, checked, seed
+         new_carry = hidden_states, bidding_count, history, seed
          return new_carry, step
                  
                   
     @jax.jit
     def predict_bid (param,
                      key,
-                     bidding_count : Int [Array, "B"], #number of consecutive bid that have been done (stops increasing when the bidding phase is closed)
                      current_player : Int [Array, "B"],
                      player_hand : Hand,
                      hidden_state,
+                     bidding_count : Int [Array, "B"], #number of consecutive bid that have been done (stops increasing when the bidding phase is closed)
                      history : BidHistory
                      ):
         """ Infers a bid through the policy network."""
@@ -163,8 +163,8 @@ def mk_bid_rollout(bidding_model, pool_size):
         proba_play = logprob_pass[:,0]+logprob_suit + logprob_rank #p(not_pass)*p(suit)*p(rank)
         branch_chose_pass = jnp.where(no_raise_p, proba_pass, proba_play)
         return (new_hidden_state,
-                action,
                 bidding_count,
+                new_history,
                 BidStep(obs,
                         action,
                         jnp.where (no_raise_p,
@@ -172,7 +172,8 @@ def mk_bid_rollout(bidding_model, pool_size):
                                    branch_chose_pass)))
 
 
-    return predict_bid
+    #return jax.jit(bid_rollout)
+    return jax.jit(bid_scan)
 
 
                        
