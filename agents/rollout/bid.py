@@ -99,6 +99,7 @@ def mk_bid_rollout(bidding_model, pool_size):
     @jax.jit
     def predict_bid (param,
                      key,
+                     bidding_count : Int [Array, "B"], #number of consecutive bid that have been done (stops increasing when the bidding phase is closed)
                      current_player : Int [Array, "B"],
                      player_hand : Hand,
                      hidden_state,
@@ -132,14 +133,14 @@ def mk_bid_rollout(bidding_model, pool_size):
 
 
         has_someone_placed_allin_p = rec.bid.rank[:,-1]
-        has_to_pass_p = chose_pass_p | has_someone_placed_allin_p | history_is_bidding_done(history)
+        no_raise_p = chose_pass_p | has_someone_placed_allin_p | history_is_bidding_done(history)
            
         # If the player does not or cannot raise (someone called allin), the one-hot encoding of
         # both the suit and rank are all FALSE
-        new_suit = jnp.where(has_to_pass_p[:,None],
+        new_suit = jnp.where(no_raise_p[:,None],
                              jnp.zeros([batch_size,6], dtype=bool),
                              jax.nn.one_hot(suit, 6).astype(bool))
-        new_rank = jnp.where(has_to_pass_p[:,None],
+        new_rank = jnp.where(no_raise_p[:,None],
                              jnp.zeros([batch_size,9], dtype=bool),
                              jax.nn.one_hot(rank, 9).astype(bool))
         action = Bid(new_suit, new_rank)
@@ -149,19 +150,24 @@ def mk_bid_rollout(bidding_model, pool_size):
         logprob_rank = jnp.log(jax.vmap(lambda p, r: p[r])(jax.nn.softmax(logit_rank), rank))
 
 
+        # if the player does not raise, the history does not change
         new_history = jtu.tree_map (lambda h_pass, h_raise:
-                            jnp.where(has_to_pass_p[:,None,None], h_pass, h_raise),
+                            jnp.where(no_raise_p[:,None,None], h_pass, h_raise),
                             history_player_pass(history, current_player),
                             history_player_bid(history, current_player, suit, rank))
+        # if the bidding is done, the counter is stopped
+        bidding_count = jnp.where (history_is_bidding_done(history),
+                                   bidding_count, bidding_count+1)
 
         proba_pass = logprob_pass[:,1]
         proba_play = logprob_pass[:,0]+logprob_suit + logprob_rank #p(not_pass)*p(suit)*p(rank)
-        branch_chose_pass = jnp.where(chose_pass_p, proba_pass, proba_play)
+        branch_chose_pass = jnp.where(no_raise_p, proba_pass, proba_play)
         return (new_hidden_state,
                 action,
+                bidding_count,
                 BidStep(obs,
                         action,
-                        jnp.where (has_to_pass_p,
+                        jnp.where (no_raise_p,
                                    jnp.zeros(batch_size), # log(p=1), no choice
                                    branch_chose_pass)))
 

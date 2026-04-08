@@ -155,7 +155,8 @@ def test_bid(pool_size=2, game_per_pair=3, seed=seed):
     history = history_initialize(current_player)
 
     predict_bid = mk_bid_rollout(bid_policy_mdl, pool_size)
-    return predict_bid (nnx.state(bid_policy_mdl), seed, current_player, hands, hidden_states, history)
+    bidding_count = jnp.zeros(batch_size, dtype=int)
+    return predict_bid (nnx.state(bid_policy_mdl), seed, bidding_count, current_player, hands, hidden_states, history)
     #bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
 #    return bid_scan(all_params, permutation, hands,
 #                    (hidden_states, initial_bid, checked, seed),
