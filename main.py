@@ -148,15 +148,18 @@ def test_bid(pool_size=2, game_per_pair=3, seed=seed):
     seed, key = rnd.split(seed)
     hands = deal(rnd.split(key, batch_size))
     hidden_states = jnp.zeros([batch_size, 4, 5])
-    initial_bid = Bid(jnp.zeros([batch_size, 6], dtype=bool), jnp.zeros([batch_size, 9], dtype=bool), jnp.zeros([batch_size], dtype=int))
     checked = jnp.zeros([batch_size, 4], dtype=bool)
 
     current_player = jnp.zeros([batch_size], dtype=int)
 
-    bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
-    return bid_scan(all_params, permutation, hands,
-                    (hidden_states, initial_bid, checked, seed),
-                    current_player)
+    history = history_initialize(current_player)
 
+    predict_bid = mk_bid_rollout(bid_policy_mdl, pool_size)
+    return predict_bid (nnx.state(bid_policy_mdl), seed, current_player, hands, hidden_states, history)
+    #bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
+#    return bid_scan(all_params, permutation, hands,
+#                    (hidden_states, initial_bid, checked, seed),
+#                    current_player)
+#
 
 

@@ -25,13 +25,17 @@ from coinche.Hand import *
 
 
 
-
 @struct.dataclass
 class Bid:
-    """ A bid made by a player
-    """
+    """ A bid made by a player """
     suit : Bool [Array, "B 6"] # one-hot [0,5] total 6: all 4 suits + ALL_TRUMP + NO_TRUMP 
     rank : Bool [Array, "B 10"] # one-hot 0-9 total 10: from PASS (1 call) + 80 to 160 (8 calls) + ALL_IN 
+
+@struct.dataclass
+class BidRecord:
+    """ A record of a bid made by someone in the past
+    """
+    bid : Bid
     author : Int [Array, "B"] # index of the player who called this bid
     passed : Bool [Array, "B 4"] # who passed on the bid
     coinched : Bool [Array, "B 4"] # TODO (not implemented) who coinched the bid 
@@ -42,39 +46,60 @@ class BidHistory:
     """ Represents all the previous bid, and a pointer to the current bid:
         Sice ranks can go from 80 to 160 (total=8) + allin (total=9), as most 9 possible bid can be called in a single game.
     """
-    entries : Bid # B 9 Bid
+    entries : BidRecord # B 9 BidRecord
     index : Int [Array, "B"] # index of the current bid
 
+@jax.jit
+def record_to_tensor (rec : BidRecord):
+    return jnp.concatenate([bid_to_tensor(rec.bid),
+                            jax.nn.one_hot(rec.author,4),
+                            rec.passed,
+                            rec.coinched,
+                            rec.overcoinched],axis=-1)
+
+def history_to_tensor (history : BidHistory):
+    entries = history.entries # B 10 BidRecord
+    
+    def entries_to_tensor (e): # 10 Record
+        return jax.vmap(record_to_tensor)(e).flatten()
+        
+
+    return jnp.concatenate([jax.vmap(entries_to_tensor)(entries),
+                            history.index[:,None]], axis=1)
+
+
 #--------------------* Predicate on history *----------------------#
+# TODO not tested: not used
 
 def history_is_empty (history : BidHistory) -> Bool [Array, "B"]:
     return history.index == 0
 def history_can_raise (history : BidHistory) -> Bool [Array, "B"]:
-    bid = history_current_bid(history)
-    is_all_in = bid.rank[:,-1] 
-    is_coinched = bid.coinched.any(axis=-1)
+    rec = history_current_record(history)
+    is_all_in = rec.action.rank[:,-1] 
+    is_coinched = rec.coinched.any(axis=-1)
     return is_all_in | is_coinched
 def history_is_bidding_done (history : BidHistory) -> Bool [Array, "B"]:
-    bid = history_current_bid(history)
-    everyone_pass = bid.passed[:,-1]
-    overcoinched = bid.overcoinched.any(axis=-1)
+    rec = history_current_record(history)
+    everyone_pass = rec.passed.all(axis=-1)
+    overcoinched = rec.overcoinched.any(axis=-1)
     return everyone_pass | overcoinched
 
 
 
 # -------------------* Actions on history *------------------------#
 @jax.jit
-def history_current_bid(history : BidHistory) -> Bid:
+def history_current_record (history : BidHistory) -> BidRecord:
     return database_get(history.entries,history.index)
 @jax.jit
 def history_player_pass (history : BidHistory,
                          player : Int [Array, "B"]) -> BidHistory:
     """ Modifies the current bid to specify that the specified player passed"""
-    bid = history_current_bid(history)
-    bid = bid.replace(passed = database_set(
-                                    bid.passed, jnp.ones_like(player, dtype=bool), player))
-    new_entries = database_set(history.entries, bid, history.index)
+    rec = history_current_record(history)
+    rec = rec.replace(passed = database_set(
+                                   rec.passed, jnp.ones_like(player, dtype=bool), player))
+    new_entries = database_set(history.entries, rec, history.index)
     return history.replace(entries=new_entries)
+
 @jax.jit
 def history_player_bid (history : BidHistory,
                         player : Int [Array, "B"],
@@ -82,28 +107,22 @@ def history_player_bid (history : BidHistory,
                         rank : Int [Array, "B"]):
     """ Appends the bid made by the specified player to the history """
     batch_size = player.shape[0]
-    bid = Bid (jax.nn.one_hot(suit,6, dtype=bool),
-               jax.nn.one_hot(rank,9, dtype=bool),
+    rec = BidRecord (
+               Bid (jax.nn.one_hot(suit,6, dtype=bool),
+                     jax.nn.one_hot(rank,9, dtype=bool)),
                player,
                jnp.zeros([batch_size, 4], dtype=bool), # noone passed
                jnp.zeros([batch_size, 4], dtype=bool), # noone coinched
                jnp.zeros([batch_size, 4], dtype=bool)) # noone overcoinched
     return history.replace (index = history.index + 1,
-                            entries = database_set(history.entries, bid, history.index+1))
-
-@jax.jit
-def history_legal_bid (history : BidHistory,
-                       player):
-
-    suit_mask = history
-
-    return suit_mask, rank_mask
+                            entries = database_set(history.entries, rec, history.index+1))
 
 
 # -------------* Utils for Bid manipulation *----------------- #
 @jax.jit
-def player_pass_on_bid (bid : Bid, player : Int [Array, "B"]) -> Bid:
-    return Bid (bid.suit, bid.rank, bid.author, bid.passed | jax.nn.one_hot(player, 4).astype(bool))
+def player_pass_on_bid (rec : BidRecord, player : Int [Array, "B"]) -> Bid:
+    return rec.replace(passed = rec.bid.passed | jax.nn.one_hot(player,4).astype(bool))
+    #return Bid (bid.suit, bid.rank, bid.author, bid.passed | jax.nn.one_hot(player, 4).astype(bool))
 
 @jax.jit
 def bid_is_a_pass (bid : Bid) -> Bool [Array, "B"]:
@@ -112,14 +131,15 @@ def bid_is_a_pass (bid : Bid) -> Bool [Array, "B"]:
 
 # -------------* Utils for History manipulation *----------------- #
 
+@jax.jit
 def history_replace_bid (history : BidHistory,
-                         bid : Bid):
+                         rec : BidRecord):
                        
     """ Modifies the bids in a batched of 9xhistory given a batch of positions:
         Sets history_i[j] = bid[i] for j=index[i]
         Warning: sets the current pointer to the specified index
     """
-    entries = database_set (history.entries, bid, index)
+    entries = database_set (history.entries, rec, index)
     return history.replace(entries=entries)
 
 @jax.jit
@@ -127,8 +147,9 @@ def history_initialize (dealer : Int [Array, "B"]):
     """ initialize a history with dummy empty bids made by the dealer player """
     batch_size = dealer.shape[0]
     history_size = 10 # 10 possible bids max
-    entries = Bid (jnp.zeros([batch_size,history_size, 6], dtype=bool),
-                   jnp.zeros([batch_size,history_size, 9], dtype=bool),
+    entries = BidRecord (
+                   Bid (jnp.zeros([batch_size,history_size, 6], dtype=bool),
+                        jnp.zeros([batch_size,history_size, 9], dtype=bool)),
                    jnp.tile(dealer[:,None],(1,history_size)),
                    jnp.zeros([batch_size,history_size,4], dtype=bool),
                    jnp.zeros([batch_size,history_size,4], dtype=bool),
@@ -138,11 +159,10 @@ def history_initialize (dealer : Int [Array, "B"]):
 
 
 # -------------* Others *-----------------------#
+@jax.jit
 def bid_to_tensor (bid : Bid):
     return jnp.concatenate([bid.suit,
-                            bid.rank,
-                            jax.nn.one_hot(bid.author,4)], axis=1)
-
+                            bid.rank],axis=-1)
 
 
 
