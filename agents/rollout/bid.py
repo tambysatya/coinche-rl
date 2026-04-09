@@ -36,6 +36,7 @@ def mk_bid_rollout(bidding_model, pool_size):
             - logit_rank : Float [Array, "B 9"] representing the probability to choose each rank (+ ALL_IN) 
     """
     graphdef, _ = nnx.split(bidding_model)
+    bid_scan = mk_bid_scan(bidding_model, pool_size)
 
     def bid_rollout (all_params,
                      permutation,
@@ -58,7 +59,12 @@ def mk_bid_rollout(bidding_model, pool_size):
 
          hidden_states, bidding_count, history, seed = final_carry
          return hidden_states, bidding_count, history, obs
+    return jax.jit(bid_rollout)
 
+def mk_bid_scan(bidding_model, pool_size):
+
+    graphdef, _ = nnx.split(bidding_model)
+    predict_bid = mk_predict_bid(bidding_model, pool_size)
 
     @jax.jit
     def bid_scan (all_params,
@@ -80,14 +86,10 @@ def mk_bid_rollout(bidding_model, pool_size):
          # regroup by agent [P, B/P, ...] then evaluates the batch before restoring the original order
          dataset = group_dataset_by_agent(pool_size, permutation,
                                     (current_player, player_hand, player_hidden, bidding_count, history))
-         _current_player, _player_hand, _player_hidden, _bidding_count, _history = dataset
-         print (_current_player.shape, _player_hand.shape, _player_hidden.shape, _bidding_count.shape,_history.index.shape)
 
          play = jax.vmap(predict_bid)(all_params, rnd.split(key, pool_size), *dataset)
          _player_hidden, _bidding_count, _history, _step = play
-         print (_player_hidden.shape, _bidding_count.shape, _history.index.shape)
          player_hidden, bidding_count, history, step = ungroup_dataset_by_agent(permutation, play)
-         print (player_hidden.shape, bidding_count.shape, history.index.shape)
 
          # updates the hidden states of each player
          hidden_states = jax.vmap(lambda p,hid,player_hid:
@@ -98,9 +100,12 @@ def mk_bid_rollout(bidding_model, pool_size):
 
          new_carry = hidden_states, bidding_count, history, seed
          return new_carry, step
-                 
+    return jax.jit(bid_scan)
                   
-    @jax.jit
+def mk_predict_bid(bidding_model, pool_size):
+
+    graphdef, _ = nnx.split(bidding_model)
+
     def predict_bid (param,
                      key,
                      current_player : Int [Array, "B"],
@@ -110,6 +115,7 @@ def mk_bid_rollout(bidding_model, pool_size):
                      history : BidHistory
                      ):
         """ Infers a bid through the policy network."""
+
         batch_size = current_player.shape[0]
         obs = BidObs (hidden_state, history, player_hand)
         bid_policy = nnx.merge(graphdef, param)
@@ -156,7 +162,9 @@ def mk_bid_rollout(bidding_model, pool_size):
 
         # if the player does not raise, the history does not change
         new_history = jtu.tree_map (lambda h_pass, h_raise:
-                            jnp.where(no_raise_p[:,None,None], h_pass, h_raise),
+                            jnp.where( #reshape the condition dynamically
+                                      no_raise_p.reshape(no_raise_p.shape + (1,)*(h_pass.ndim-no_raise_p.ndim)), 
+                                      h_pass, h_raise),
                             history_player_pass(history, current_player),
                             history_player_bid(history, current_player, suit, rank))
         # if the bidding is done, the counter is stopped
@@ -176,8 +184,7 @@ def mk_bid_rollout(bidding_model, pool_size):
                                    branch_chose_pass)))
 
 
-    #return jax.jit(bid_rollout)
-    return jax.jit(bid_scan)
+    return jax.jit(predict_bid)
 
 
                        

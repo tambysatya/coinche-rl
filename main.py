@@ -154,16 +154,16 @@ def test_bid(pool_size=2, game_per_pair=3, seed=seed):
 
     history = history_initialize(current_player)
 
-    #predict_bid = mk_bid_rollout(bid_policy_mdl, pool_size)
-    bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
-    #bid_rollout = mk_bid_rollout(bid_policy_mdl, pool_size)
+    predict_bid = mk_predict_bid(bid_policy_mdl, pool_size)
+    bid_scan = mk_bid_scan(bid_policy_mdl, pool_size)
+    bid_rollout = mk_bid_rollout(bid_policy_mdl, pool_size)
     bidding_count = jnp.zeros(batch_size, dtype=int)
     carry = hidden_states, bidding_count, history, seed
     player_orders = jnp.tile(jnp.arange(4),(batch_size,1))
 
     #return bid_rollout(all_params, permutation, hands, hidden_states, current_player, seed)
-    return history, bid_scan(all_params,player_orders, permutation, hands, carry, 0)
-    #return predict_bid (nnx.state(bid_policy_mdl), seed, current_player, hands, hidden_states, bidding_count, history)
+    return bid_scan(all_params,player_orders, permutation, hands, carry, 0)
+    #return history, predict_bid (nnx.state(bid_policy_mdl), seed, current_player, hands, hidden_states, bidding_count, history)
     #bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
 #    return bid_scan(all_params, permutation, hands,
 #                    (hidden_states, initial_bid, checked, seed),
