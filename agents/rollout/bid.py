@@ -80,10 +80,14 @@ def mk_bid_rollout(bidding_model, pool_size):
          # regroup by agent [P, B/P, ...] then evaluates the batch before restoring the original order
          dataset = group_dataset_by_agent(pool_size, permutation,
                                     (current_player, player_hand, player_hidden, bidding_count, history))
-         current_player, player_hand, player_hidden, bidding_count, history = dataset
+         _current_player, _player_hand, _player_hidden, _bidding_count, _history = dataset
+         print (_current_player.shape, _player_hand.shape, _player_hidden.shape, _bidding_count.shape,_history.index.shape)
 
          play = jax.vmap(predict_bid)(all_params, rnd.split(key, pool_size), *dataset)
+         _player_hidden, _bidding_count, _history, _step = play
+         print (_player_hidden.shape, _bidding_count.shape, _history.index.shape)
          player_hidden, bidding_count, history, step = ungroup_dataset_by_agent(permutation, play)
+         print (player_hidden.shape, bidding_count.shape, history.index.shape)
 
          # updates the hidden states of each player
          hidden_states = jax.vmap(lambda p,hid,player_hid:
