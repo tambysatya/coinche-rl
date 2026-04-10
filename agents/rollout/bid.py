@@ -45,7 +45,8 @@ def mk_bid_rollout(bidding_model, pool_size):
                      initial_player,
                      seed):
          batch_size = initial_player.shape[0]
-         n_calls = 4 * 10  # total call = every players pass except the last one
+         n_calls = 2  # total call = every players pass except the last one
+         #n_calls = 4 * 10  # total call = every players pass except the last one
          players_order = (initial_player[:,None] + jnp.arange(4)) % 4 # starts the rotation from the initial player
 
 

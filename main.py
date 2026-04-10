@@ -21,7 +21,7 @@ seed = rnd.key(0)
 policy_mdl = BasicAgent(10, nnx.Rngs(0))
 critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
-bid_policy_mdl = BidAgent(10,nnx.Rngs(0))
+bid_policy_mdl = BidAgent(10,nnx.Rngs(0), uniform=True)
 
 
 def generate_actor_pool (pool_size, model=policy_mdl):
@@ -161,8 +161,8 @@ def test_bid(pool_size=2, game_per_pair=3, seed=seed):
     carry = hidden_states, bidding_count, history, seed
     player_orders = jnp.tile(jnp.arange(4),(batch_size,1))
 
-    #return bid_rollout(all_params, permutation, hands, hidden_states, current_player, seed)
-    return bid_scan(all_params,player_orders, permutation, hands, carry, 0)
+    return bid_rollout(all_params, permutation, hands, hidden_states, current_player, seed)
+    #return bid_scan(all_params,player_orders, permutation, hands, carry, 0)
     #return history, predict_bid (nnx.state(bid_policy_mdl), seed, current_player, hands, hidden_states, bidding_count, history)
     #bid_scan = mk_bid_rollout(bid_policy_mdl, pool_size)
 #    return bid_scan(all_params, permutation, hands,
