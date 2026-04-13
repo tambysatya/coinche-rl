@@ -21,7 +21,7 @@ seed = rnd.key(0)
 policy_mdl = BasicAgent(10, nnx.Rngs(0))
 critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
-bid_policy_mdl = BidAgent(10,nnx.Rngs(0), uniform=True)
+bid_policy_mdl = BidAgent(10,nnx.Rngs(0)) #, uniform=True)
 
 
 def generate_actor_pool (pool_size, model=policy_mdl):
