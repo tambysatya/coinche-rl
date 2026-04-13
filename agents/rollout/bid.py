@@ -45,7 +45,7 @@ def mk_bid_rollout(bidding_model, pool_size):
                      initial_player,
                      seed):
          batch_size = initial_player.shape[0]
-         n_calls = 3  # total call = every players pass except the last one
+         n_calls = 40  # total call = every players pass except the last one
          #n_calls = 4 * 10  # total call = every players pass except the last one
          players_order = (initial_player[:,None] + jnp.arange(4)) % 4 # starts the rotation from the initial player
 
@@ -130,7 +130,7 @@ def mk_predict_bid(bidding_model, pool_size):
         has_someone_placed_p = history_is_empty(history)
         bid_mask = jnp.where(has_someone_placed_p[:,None],
                              jnp.ones([batch_size,9], dtype=bool),
-                             jnp.tile(jnp.arange(9), (batch_size,1)) > rec.bid.rank.argmax(axis=1)[:,None]) 
+                             jnp.tile(jnp.arange(9), (batch_size,1)) > rec.bid.rank.argmax(axis=-1)[:,None]) 
         logit_rank = jnp.where(bid_mask,
                         logit_rank,
                         -jnp.inf)
