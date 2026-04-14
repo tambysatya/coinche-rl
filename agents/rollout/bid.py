@@ -26,6 +26,7 @@ class BidStep:
     obs : BidObs
     action : Bid
     logprobs : Float [Array, "B"]
+    is_masked : Bool [Array, "B"] # If set to true, this step should not be used for training 
 
 
 def mk_bid_rollout(bidding_model, pool_size):
@@ -182,7 +183,8 @@ def mk_predict_bid(bidding_model, pool_size):
                         action,
                         jnp.where (no_raise_p,
                                    jnp.zeros(batch_size), # log(p=1), no choice
-                                   branch_chose_pass)))
+                                   branch_chose_pass),
+                        history_is_bidding_done(history)))
 
 
     return jax.jit(predict_bid)
