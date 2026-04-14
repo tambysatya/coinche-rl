@@ -139,7 +139,7 @@ def mk_trick_rollout (policy_model, pool_size):
     return jax.jit(trick_rollout)
         
 
-def mk_rollout (policy_model, pool_size):
+def mk_game_rollout (policy_model, pool_size):
     trick_rollout = mk_trick_rollout(policy_model, pool_size)
 
     def rollout (all_params, # Params of each agent of the pool: [P, ...]
@@ -243,8 +243,8 @@ def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
     return jax.vmap(cumulative_sum)(jnp.arange(8))
 
 
-def mk_collect_samples(policy_mdl, pool_size):
-    rollout = mk_rollout(policy_mdl, pool_size)
+def mk_collect_game_samples(policy_mdl, pool_size):
+    rollout = mk_game_rollout(policy_mdl, pool_size)
 
     def collect_samples (
             discount_factor,
