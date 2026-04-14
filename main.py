@@ -6,6 +6,7 @@ from coinche.LegalMoves import *
 
 from agents.rollout.trick import *
 from agents.rollout.bid import *
+from agents.rollout.game import *
 from agents.basic_agent import *
 from agents.train import *
 
@@ -18,15 +19,35 @@ from time import time
 from tqdm import tqdm
 
 seed = rnd.key(0)
-policy_mdl = BasicAgent(10, nnx.Rngs(0))
+game_policy_mdl = BasicAgent(10, nnx.Rngs(0))
 critic_mdl = BasicCritic(10, nnx.Rngs(0))
 
 bid_policy_mdl = BidAgent(10,nnx.Rngs(0)) #, uniform=True)
 
 
-def generate_actor_pool (pool_size, model=policy_mdl):
+def generate_actor_pool (pool_size, model):
     pool = [nnx.state(model) for i in range (pool_size)]
     return jtu.tree_map(lambda *f: jnp.stack(f), *pool)
+
+def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
+    all_bid_params = generate_actor_pool(pool_size, model=bid_policy_mdl)
+    all_game_params = generate_actor_pool(pool_size, model=game_policy_mdl)
+    batch_size = game_per_pair*(pool_size ** 2)
+
+    agent_indices = jnp.indices((pool_size, pool_size)).T
+    agent_indices = jnp.tile(agent_indices,(1,1,game_per_pair)).reshape([batch_size,2])
+    permutation = agent_indices.argsort(axis=1)
+
+
+    hidden_states = jnp.zeros([batch_size,4,3]) # 4 hidden states per game
+    initial_player = jnp.zeros([batch_size], dtype=int)
+
+    rollout = mk_rollout(bid_policy_mdl, game_policy_mdl, pool_size)
+    return rollout(all_bid_params, all_game_params,
+                   permutation, hidden_states,
+                   initial_player,
+                   seed)
+
 
 
 @partial(jax.jit, static_argnames=["batch_size", "pool_size"])

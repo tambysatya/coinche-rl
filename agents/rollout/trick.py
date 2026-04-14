@@ -7,6 +7,7 @@ import jax.tree_util as jtu
 import flax.nnx as nnx
 
 from coinche.Trick import *
+from coinche.Bid import *
 from coinche.LegalMoves import *
 
 
@@ -15,6 +16,7 @@ Score = Int [Array, "B"]
 @struct.dataclass
 class Observation:
     """ Synthesis of the observations of a trick """
+    history : BidHistory
     trick : jax.Array # actual trick, with only the hand of the current player
     current_score : Score  # current score of the team
     total_score : Score # sum of the cards played so far
@@ -37,13 +39,13 @@ def mk_step(policy_model):
 
     def step (agent_index,  # current agent index : Int
               params, hidden_state,
-              trump : Suit, trick : Trick,
+              trump : Suit, history : BidHistory, trick : Trick,
               current_score,total_score, 
               key):
         """ The current player plays a card """
 
         batch_size = trump.shape[0]
-        obs = Observation(trick_obs(trick), current_score, total_score, hidden_state)
+        obs = Observation(history, trick_obs(trick), current_score, total_score, hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trump, trick)
@@ -75,19 +77,19 @@ def mk_league_step (policy_model, pool_size):
     def step (all_params, # [P, Params]
               permutation : Int [Array, "B"], # [B] : index of the agent that plays this turn
               hidden_state, #[B, ...] hidden state of the agent
-              trump : Suit, trick : Trick, current_score, total_score,
+              trump : Suit, history : BidHistory, trick : Trick, current_score, total_score,
               key):
         
         batch_size = trump.shape[0]
-        batch_per_agent = group_dataset_by_agent(pool_size, permutation, (hidden_state, trump, trick, current_score, total_score))
+        batch_per_agent = group_dataset_by_agent(pool_size, permutation, (hidden_state, trump, history, trick, current_score, total_score))
        ## batch_per_agent = jtu.tree_map(
        ##                           lambda l : l[permutation].reshape(pool_size, batch_size // pool_size, *(l.shape[1:])),
        ##                           (hidden_state, trump, trick, current_score, total_score))
 
-        hidden_state, trump, trick, current_score, total_score = batch_per_agent # [(P, B, ...)]
+        hidden_state, trump, history, trick, current_score, total_score = batch_per_agent # [(P, B, ...)]
         ret, record = jax.vmap(agent_step)(
                 jnp.arange(pool_size), all_params,
-                hidden_state, trump, trick, current_score, total_score, rnd.split(key,pool_size))
+                hidden_state, trump, history, trick, current_score, total_score, rnd.split(key,pool_size))
 
         #ret, record = jtu.tree_map(
         #                    lambda l : (l.reshape(batch_size, *(l.shape[2:])).squeeze())[permutation],
@@ -108,6 +110,7 @@ def mk_trick_rollout (policy_model, pool_size):
                        permutations: Int [Array, "B 2"], # permutation describing which agents plays Team0 and Team1
                        initial_hidden, #  [B, 4, ...] previous hidden state for each player
                        trump : Suit,
+                       history : BidHistory,
                        team_score, # [score_team_0, score_team_1]
                        total_score,
                        initial_player : Player, hands : Hand,
@@ -124,7 +127,7 @@ def mk_trick_rollout (policy_model, pool_size):
 
             (new_hidden, new_trick), new_record = step(all_params, player_permutation,
                                                        player_hidden,
-                                                       trump, prev_trick,
+                                                       trump, history, prev_trick,
                                                        player_score, total_score,
                                                        step_seed)
             new_hidden = jax.vmap(lambda a, h, p: a.at[p].set(h))(all_hidden, new_hidden, prev_trick.current_player) #updates the hidden state of the playing agent
@@ -145,7 +148,7 @@ def mk_game_rollout (policy_model, pool_size):
     def rollout (all_params, # Params of each agent of the pool: [P, ...]
                  permutations : Int [Array, "B 2"], # Pair of agent for each game
                  initial_hidden_state, # [B, 4, ...] hidden state of each player, for each game
-                 trump : Suit, initial_player : Player, initial_hands : Hand,
+                 trump : Suit, history : BidHistory, initial_player : Player, initial_hands : Hand,
                  seed):
         """ Simulates a complete trick phase (8 tricks):
                 input : - parameters of the each policy network
@@ -170,7 +173,7 @@ def mk_game_rollout (policy_model, pool_size):
             (next_hidden, finished_trick), trajectory_records = trick_rollout (
                                                                   all_params, permutations,
                                                                   prev_hidden,
-                                                                  trump,
+                                                                  trump, history,
                                                                   prev_scores, #score of both teams
                                                                   prev_total_score,
                                                                   prev_trick.best_player,

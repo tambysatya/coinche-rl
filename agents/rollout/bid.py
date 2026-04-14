@@ -56,11 +56,11 @@ def mk_bid_rollout(bidding_model, pool_size):
          bidding_count = jnp.zeros_like(initial_player, dtype=int)
 
          carry = hidden_states, bidding_count, history, seed
-         final_carry, obs = jax.lax.scan(partial(bid_scan, all_params, players_order, permutation, hands),
+         final_carry, steps = jax.lax.scan(partial(bid_scan, all_params, players_order, permutation, hands),
                                      carry, jnp.arange(n_calls))
 
          hidden_states, bidding_count, history, seed = final_carry
-         return hidden_states, bidding_count, history, obs
+         return hidden_states, bidding_count, history, steps
     return jax.jit(bid_rollout)
 
 def mk_bid_scan(bidding_model, pool_size):
