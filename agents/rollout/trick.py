@@ -39,13 +39,13 @@ def mk_step(policy_model):
 
     def step (agent_index,  # current agent index : Int
               params, hidden_state,
-              trump : Suit, history : BidHistory, trick : Trick,
+              trump : Suit, bid : BidHistory, trick : TrickHistory,
               current_score,total_score, 
               key):
         """ The current player plays a card """
 
         batch_size = trump.shape[0]
-        obs = Observation(history, trick_obs(trick), current_score, total_score, hidden_state)
+        obs = Observation(bid, trick_obs(trick), current_score, total_score, hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trump, trick)

@@ -31,7 +31,7 @@ class Trick:
 class TrickHistory:
     """ This encodes the entire trick phase until now """
     trump : Suit
-    entities : Trick # B 8 Trick
+    tricks : Trick # B 8 Trick
 
     current_player : Player # The player who has to play this turn
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
@@ -40,10 +40,116 @@ class TrickHistory:
 
 
 @jax.jit
+def trick_history_obs(history: TrickHistory):
+    """ Observation of a trick where the only visible hand is the one of the current player """
+    player = history.current_player
+    batch_size = player.shape[0]
+
+    def trick_obs (trick : Trick):
+        return jnp.concatenate ([jax.nn.one_hot(trick.starting_player,4).flatten(),
+                                 jax.nn.one_hot(trick.suit, 4).flatten(),
+                                 card_to_tensor(trick.best_card).flatten(),
+                                 jax.nn.one_hot(trick.best_player,4).flatten(),
+                                 trick.value.flatten(),
+                                 card_to_tensor(trick.cards).flatten()],
+                                axis = -1)
+
+    player_hand = jax.vmap(lambda hand, p: hand[p])(history.hands, player)
+    #trick_cards = jax.vmap (lambda trick: jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards))(history.tricks)
+    trick_cards = jax.vmap(lambda t: trick_obs(t))(history.tricks)
+    trick_cards = trick_cards.reshape([batch_size, -1])
+    
+    return jnp.concatenate([jax.nn.one_hot(history.trump,6),
+                            trick_cards,
+                            jax.nn.one_hot(player,4),
+                            player_hand.reshape(batch_size,-1)],
+                           axis=-1)
+
+    
+
+
+
+
+
+
+
+@jax.jit
+def play (history : TrickHistory,
+          cards : Card) -> TrickHistory:
+
+    """ 
+        Modifies the current trick in the history by inserting the card played by a player
+    """
+
+    trumps = history.trump.argmax(axis=-1)
+    tricks = database_get(history.tricks, history.index)
+    players = history.current_player
+
+    best_card = tricks.best_card
+    same_best_p = is_better_p(trumps, best_card, cards)
+    startedP = tricks.startedP
+
+    # inserts the card in trick (for an entry in the batch)
+    def insert_card (old_cards, player, card):
+        return jtu.tree_map(lambda array, val: array.at[player].set(val), old_cards, card)
+    new_cards = jax.vmap(insert_card)(tricks.cards, players, cards)
+
+    # removes the card in the hand of the player (for an entry in the batch)
+    def remove_card (player_hand, card):
+        return player_hand * (~card_to_subhand(card))
+    new_hands = jax.vmap (lambda hand,p, card: hand.at[p].set(remove_card(hand[p], card)))(history.hands, players[:,None],cards) #vmap over the batch
+
+    new_best_players = jnp.where(same_best_p, tricks.best_player, players)
+
+    new_trick_suits = jnp.where(startedP, tricks.suit, cards.suit)
+    new_best_cards = jtu.tree_map(lambda old,new: jnp.where(same_best_p,old, new), best_card, cards)
+    new_value = tricks.value + card_value(trumps, cards)
+
+
+    is_first_card_p = tricks.size == 1
+    current_player = (history.current_player + 1) % 4
+    new_trick = Trick(jnp.ones_like(players, dtype=bool),
+                      is_first_card_p*current_player + (1-is_first_card_p)*tricks.starting_player,
+                      new_trick_suits, new_best_cards, new_best_players,
+                      new_value, new_cards, tricks.size + 1)
+    
+    is_done = new_trick.size == 4
+
+    return history.replace(tricks = database_set(history.tricks, new_trick, history.index), #replace t
+                           current_player = current_player,
+                           hands = new_hands,
+                           index = history.index + is_done
+                           )
+
+    
+def show_trick(trump, trick: Trick, index=0) -> str:
+    """ Displays a trick from a batch (default = 0)."""
+    suit = trick.suit[index]
+    cards = jtu.tree_map(lambda t: t[index], trick.cards)
+    best_card = Card(trick.best_card.suit[index], trick.best_card.rank[index])
+    best_player = trick.best_player[index]
+    startedP = trick.startedP[index]
+
+    if not startedP:
+        return "[]"
+    ret = [f"[best={best_player}]"]
+    for i, card_ in enumerate(cards):
+        if card_.suit >= 0 and card.rank >= 0:
+            if card == best_card:
+                ret.append(f"{bcolors.BOLD}{bcolors.UNDERLINE}{show_card(trump, card, i)}{bcolors.ENDC}")
+            else:
+                ret.append(f"{show_card(trump, card, i)}")
+        else:
+            ret.append("?")
+    return " ".join(ret)
+        
+
+
+@jax.jit
 def trick_history_initialize (history : BidHistory, hands : Hand):
    """ Setups an empty game, given a batch of history and a batch of 4 hands """
    rec = bid_history_current_record (history)
-   initial_players, trump = rec.author, rec.bid.suit
+   initial_players, trump = rec.author, rec.bid.suit.argmax(axis=-1)
 
    batch_size = rec.author.shape[0]
 
@@ -75,90 +181,5 @@ def new_trick(initial_players) -> Trick:
     cards = Card(jnp.full([batch_size, 4],-1, dtype=int), jnp.full([batch_size, 4],-1, dtype=int))
 
     return Trick(startedP, initial_players,dummy_suit, dummy_best_card, initial_players, value, cards, jnp.zeros_like(initial_players, dtype=int))
-
-
-
-
-
-
-@jax.jit
-def play (trumps : Suit,
-          tricks : Trick,
-          cards : Card) -> Trick:
-
-    """ Inserts the card played by a player into the trick. Providing the trump suit is mandatory
-        to identifies which player is winning the trick so far"""
-
-    players = tricks.current_player
-
-    best_card = tricks.best_card
-    same_best_p = is_better_p(trumps, best_card, cards)
-    startedP = tricks.startedP
-
-    # inserts the card in trick (for an entry in the batch)
-    def insert_card (old_cards, player, card):
-        return jtu.tree_map(lambda array, val: array.at[player].set(val), old_cards, card)
-    new_cards = jax.vmap(insert_card)(tricks.cards, players, cards)
-
-    # removes the card in the hand of the player (for an entry in the batch)
-    def remove_card (player_hand, card):
-        return player_hand * (~card_to_subhand(card))
-    new_hands = jax.vmap (lambda hand,p, card: hand.at[p].set(remove_card(hand[p], card)))(tricks.hands, players[:,None],cards) #vmap over the batch
-
-    new_best_players = jnp.where(same_best_p, tricks.best_player, players)
-
-    new_trick_suits = jnp.where(startedP, tricks.suit, cards.suit)
-    new_best_cards = jtu.tree_map(lambda old,new: jnp.where(same_best_p,old, new), best_card, cards)
-    new_value = tricks.value + card_value(trumps, cards)
-    current_player = (tricks.current_player + 1) % 4
-
-
-    return Trick(jnp.ones_like(players, dtype=bool),
-                 new_trick_suits, new_best_cards, new_best_players,
-                 new_value, new_cards, new_hands, current_player, tricks.size + 1)
-
-    
-def show_trick(trump, trick: Trick, index=0) -> str:
-    """ Displays a trick from a batch (default = 0)."""
-    suit = trick.suit[index]
-    cards = jtu.tree_map(lambda t: t[index], trick.cards)
-    best_card = Card(trick.best_card.suit[index], trick.best_card.rank[index])
-    best_player = trick.best_player[index]
-    startedP = trick.startedP[index]
-
-    if not startedP:
-        return "[]"
-    ret = [f"[best={best_player}]"]
-    for i, card_ in enumerate(cards):
-        if card_.suit >= 0 and card.rank >= 0:
-            if card == best_card:
-                ret.append(f"{bcolors.BOLD}{bcolors.UNDERLINE}{show_card(trump, card, i)}{bcolors.ENDC}")
-            else:
-                ret.append(f"{show_card(trump, card, i)}")
-        else:
-            ret.append("?")
-    return " ".join(ret)
-        
-
-
-@jax.jit
-def trick_obs(trick: Trick):
-    """ Observation of a trick where the only visible hand is the one of the current player """
-    player = trick.current_player
-    batch_size = player.shape[0]
-
-    player_hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
-    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards)
-    trick_cards = trick_cards.reshape([batch_size, -1])
-    
-    return jnp.concatenate([trick.suit[:,None],
-                            card_to_tensor(trick.best_card),
-                            trick.best_player[:,None],
-                            trick.value[:,None],
-                            trick_cards,
-                            player_hand.reshape([-1, 4*8]),
-                            trick.current_player[:,None],
-                            trick.size[:,None]], axis=1)
-    
 
 
