@@ -124,7 +124,7 @@ def mk_predict_bid(bidding_model, pool_size):
         output, new_hidden_state = bid_policy(obs)
         logit_pass, logit_suit, logit_rank = output
 
-        rec = history_current_record(history)
+        rec = bid_history_current_record(history)
 
 
         # If a bid have been placed, all possible bids have a higher rank

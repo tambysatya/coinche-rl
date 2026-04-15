@@ -18,14 +18,13 @@ Player = Int [Array, "B"]
 class Trick:
     """ Describes a (partially played) trick """
     startedP : Bool [Array, "B"] #True if the trick has started
+    starting_player : Player #The player who started the game
     suit : Suit  # [B Suit] (first suit played)
     best_card : Card # [B Cards]: best card played so far
     best_player : Player # best player so far (known as master player) : Int
 
     value : Float [Array, "B"] # current value of the trick
     cards : Card  # Cards already played in the trick:  Player x Card : [B x 4]
-    hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
-    current_player : Player # The player who has to play this turn
     size : Int [Array, "B"] # current size of the trick [0..4]
 
 @struct.dataclass
@@ -33,45 +32,51 @@ class TrickHistory:
     """ This encodes the entire trick phase until now """
     trump : Suit
     entities : Trick # B 8 Trick
+
+    current_player : Player # The player who has to play this turn
+    hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
     index : Int [Array, "B"] # Position of the curent trick
 
 
 
 @jax.jit
-def trick_obs(trick: Trick):
-    """ Observation of a trick where the only visible hand is the one of the current player """
-    player = trick.current_player
-    batch_size = player.shape[0]
-
-    player_hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
-    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards)
-    trick_cards = trick_cards.reshape([batch_size, -1])
-    
-    return jnp.concatenate([trick.suit[:,None],
-                            card_to_tensor(trick.best_card),
-                            trick.best_player[:,None],
-                            trick.value[:,None],
-                            trick_cards,
-                            player_hand.reshape([-1, 4*8]),
-                            trick.current_player[:,None],
-                            trick.size[:,None]], axis=1)
-    
-
-
 def trick_history_initialize (history : BidHistory, hands : Hand):
    """ Setups an empty game, given a batch of history and a batch of 4 hands """
-   rec = history_current_record (history)
-   initial_players, best_suit = rec.author, rec.bid.suit
+   rec = bid_history_current_record (history)
+   initial_players, trump = rec.author, rec.bid.suit
 
    batch_size = rec.author.shape[0]
 
    #initialize 8 empty tricks per batch
-   tricks = new_trick(initial_players, hands)
+   tricks = new_trick(initial_players)
+   
+   def replicate_8(entry):
+       entry = jnp.expand_dims(entry, axis=1)
+       return jnp.broadcast_to(entry, (entry.shape[0], 8, *entry.shape[2:]))
+
    tricks = jtu.tree_map(
-                lambda l: jnp.tile(l, (1,)+(8,) + (1,)*(l.ndim-1)),
+                replicate_8,
                 tricks)
 
-   return tricks
+
+   return TrickHistory(trump, tricks, initial_players, hands, jnp.zeros([batch_size], dtype=int))
+
+
+@jax.jit
+def new_trick(initial_players) -> Trick:
+    """ Generates an empty trick:
+        The current hands of each player must be provided: [B, 4, 4 , 8] = [B 4 Hands]"""
+    batch_size = initial_players.shape[0]
+    startedP = jnp.zeros_like(initial_players, dtype=bool)
+    dummy_suit = jnp.zeros_like(initial_players, dtype=int)
+    dummy_best_card = Card(jnp.full(batch_size,-1, dtype=int), jnp.full(batch_size,-1, dtype=int))
+
+    value = jnp.zeros_like(initial_players, dtype=float)
+    cards = Card(jnp.full([batch_size, 4],-1, dtype=int), jnp.full([batch_size, 4],-1, dtype=int))
+
+    return Trick(startedP, initial_players,dummy_suit, dummy_best_card, initial_players, value, cards, jnp.zeros_like(initial_players, dtype=int))
+
+
 
 
 
@@ -113,22 +118,6 @@ def play (trumps : Suit,
                  new_value, new_cards, new_hands, current_player, tricks.size + 1)
 
     
-@jax.jit
-def new_trick(initial_players, hands : Hand) -> Trick:
-    """ Generates an empty trick:
-        The current hands of each player must be provided: [B, 4, 4 , 8] = [B 4 Hands]"""
-    batch_size = initial_players.shape[0]
-    startedP = jnp.zeros_like(initial_players, dtype=bool)
-    dummy_suit = jnp.zeros_like(initial_players, dtype=int)
-    dummy_best_card = Card(jnp.full(batch_size,-1, dtype=int), jnp.full(batch_size,-1, dtype=int))
-
-    value = jnp.zeros_like(initial_players, dtype=float)
-    cards = Card(jnp.full([batch_size, 4],-1, dtype=int), jnp.full([batch_size, 4],-1, dtype=int))
-
-    return Trick(startedP, dummy_suit, dummy_best_card, initial_players, value, cards, hands, initial_players, jnp.zeros_like(initial_players, dtype=int))
-
-
-
 def show_trick(trump, trick: Trick, index=0) -> str:
     """ Displays a trick from a batch (default = 0)."""
     suit = trick.suit[index]
@@ -150,5 +139,26 @@ def show_trick(trump, trick: Trick, index=0) -> str:
             ret.append("?")
     return " ".join(ret)
         
+
+
+@jax.jit
+def trick_obs(trick: Trick):
+    """ Observation of a trick where the only visible hand is the one of the current player """
+    player = trick.current_player
+    batch_size = player.shape[0]
+
+    player_hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
+    trick_cards = jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards)
+    trick_cards = trick_cards.reshape([batch_size, -1])
+    
+    return jnp.concatenate([trick.suit[:,None],
+                            card_to_tensor(trick.best_card),
+                            trick.best_player[:,None],
+                            trick.value[:,None],
+                            trick_cards,
+                            player_hand.reshape([-1, 4*8]),
+                            trick.current_player[:,None],
+                            trick.size[:,None]], axis=1)
+    
 
 
