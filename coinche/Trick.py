@@ -9,6 +9,7 @@ from jaxtyping import Float
 from utils import *
 from coinche.Card import *
 from coinche.Hand import *
+from coinche.Bid import *
 
 
 Player = Int [Array, "B"]
@@ -26,6 +27,13 @@ class Trick:
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
     current_player : Player # The player who has to play this turn
     size : Int [Array, "B"] # current size of the trick [0..4]
+
+@struct.dataclass
+class TrickHistory:
+    """ This encodes the entire trick phase until now """
+    trump : Suit
+    entities : Trick # B 8 Trick
+    index : Int [Array, "B"] # Position of the curent trick
 
 
 
@@ -48,6 +56,23 @@ def trick_obs(trick: Trick):
                             trick.current_player[:,None],
                             trick.size[:,None]], axis=1)
     
+
+
+def trick_history_initialize (history : BidHistory, hands : Hand):
+   """ Setups an empty game, given a batch of history and a batch of 4 hands """
+   rec = history_current_record (history)
+   initial_players, best_suit = rec.author, rec.bid.suit
+
+   batch_size = rec.author.shape[0]
+
+   #initialize 8 empty tricks per batch
+   tricks = new_trick(initial_players, hands)
+   tricks = jtu.tree_map(
+                lambda l: jnp.tile(l, (1,)+(8,) + (1,)*(l.ndim-1)),
+                tricks)
+
+   return tricks
+
 
 
 
