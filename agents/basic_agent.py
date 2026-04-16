@@ -6,13 +6,13 @@ from coinche.Bid import *
 
 class BasicAgent (nnx.Module):
     def __init__(self, hid_feats, rngs, n_hid = 1):
-        in_feats = 1+311 + 97 + 2 # Trump + History + obs_tensor + current/total score. Nno hidden state yet
+        in_feats = 32 # Trump + History + obs_tensor + current/total score. Nno hidden state yet
         out_feats = 32
         self.mlp = MLP(in_feats, hid_feats, out_feats, rngs, n_hid=n_hid)
 
     @nnx.jit
-    def __call__ (self, trump, obs): 
-        x = jnp.concat([trump[:,None], history_to_tensor(obs.history), obs.trick, obs.current_score[:,None], obs.total_score[:,None]], axis=1)
+    def __call__ (self, obs): 
+        x = jnp.concat([obs.trick.hands.reshape([-1,32])], axis=1) #DUMMY TODO
         return self.mlp(x), obs.hidden_state
 
 

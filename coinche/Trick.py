@@ -32,46 +32,23 @@ class TrickHistory:
     """ This encodes the entire trick phase until now """
     trump : Suit
     tricks : Trick # B 8 Trick
+    team_scores : Int [Array, "B 2"] # score team 0, score team 1
+    total_score : Int [Array, "B"] # total number of points
 
     current_player : Player # The player who has to play this turn
     hands : Hand # Current hand of each player: [B, 4, Hands] = [B, 4, 4 , 8]
     index : Int [Array, "B"] # Position of the curent trick
 
+@struct.dataclass
+class TrickObs:
+    """ This represents a trick history with only the hand of the current player """
+    trump : Suit
+    tricks : Trick # B 8 Trick
+    player_scrore : Int [Array, "B"]
+    total_score : Int [Array, "B"]
+    hands : Hand # Hand of the player : B 4 8
 
-
-@jax.jit
-def trick_history_obs(history: TrickHistory):
-    """ Observation of a trick where the only visible hand is the one of the current player """
-    player = history.current_player
-    batch_size = player.shape[0]
-
-    def trick_obs (trick : Trick):
-        return jnp.concatenate ([jax.nn.one_hot(trick.starting_player,4).flatten(),
-                                 jax.nn.one_hot(trick.suit, 4).flatten(),
-                                 card_to_tensor(trick.best_card).flatten(),
-                                 jax.nn.one_hot(trick.best_player,4).flatten(),
-                                 trick.value.flatten(),
-                                 card_to_tensor(trick.cards).flatten()],
-                                axis = -1)
-
-    player_hand = jax.vmap(lambda hand, p: hand[p])(history.hands, player)
-    #trick_cards = jax.vmap (lambda trick: jax.vmap(lambda c: card_to_tensor(c).reshape([1,-1]))(trick.cards))(history.tricks)
-    trick_cards = jax.vmap(lambda t: trick_obs(t))(history.tricks)
-    trick_cards = trick_cards.reshape([batch_size, -1])
-    
-    return jnp.concatenate([jax.nn.one_hot(history.trump,6),
-                            trick_cards,
-                            jax.nn.one_hot(player,4),
-                            player_hand.reshape(batch_size,-1)],
-                           axis=-1)
-
-    
-
-
-
-
-
-
+    index : Int [Array, "B"] # Position of the curent trick
 
 @jax.jit
 def play (history : TrickHistory,
@@ -114,12 +91,34 @@ def play (history : TrickHistory,
                       new_value, new_cards, tricks.size + 1)
     
     is_done = new_trick.size == 4
+    winner = new_trick.best_player
+    new_team_scores = jax.vmap (lambda score, win_player, value : score.at[win_player%2].add(value))(history.team_scores, winner, new_trick.value)
 
     return history.replace(tricks = database_set(history.tricks, new_trick, history.index), #replace t
-                           current_player = current_player,
+                           current_player = jnp.where(is_done,winner,current_player), #the current player is the winner if the current trick is done
                            hands = new_hands,
+                           team_scores = jnp.where(is_done[:,None],new_team_scores,history.team_scores),
+                           total_score = history.total_score + is_done*new_trick.value,
                            index = history.index + is_done
                            )
+
+
+
+
+@jax.jit
+def trick_history_obs(history: TrickHistory) -> TrickObs:
+    """ Observation of a trick where the only visible hand is the one of the current player """
+    hand = database_get(history.hands, history.current_player)
+    player_score = database_get(history.team_scores, history.current_player % 2)
+    return TrickObs (history.trump, history.tricks, player_score, history.total_score, hand, history.index)
+
+    
+
+
+
+
+
+
 
     
 def show_trick(trump, trick: Trick, index=0) -> str:
@@ -163,9 +162,12 @@ def trick_history_initialize (history : BidHistory, hands : Hand):
    tricks = jtu.tree_map(
                 replicate_8,
                 tricks)
+    
+   team_scores = jnp.zeros([batch_size,2])
+   total_score = jnp.zeros([batch_size])
 
 
-   return TrickHistory(trump, tricks, initial_players, hands, jnp.zeros([batch_size], dtype=int))
+   return TrickHistory(trump, tricks,team_scores, total_score, initial_players, hands, jnp.zeros([batch_size], dtype=int))
 
 
 @jax.jit

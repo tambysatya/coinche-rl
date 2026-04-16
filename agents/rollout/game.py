@@ -34,15 +34,12 @@ def mk_rollout(bid_policy, game_policy, pool_size):
                                bid_seed)
 
         print ("Bidding phase")
-        hidden_states, bidding_count, history, bidding_steps = rollout #everything is [B, ....] except bididng_steps which is [40, B, ....]
-        trick_history = trick_history_initialize(history, hands)
-
+        hidden_states, bidding_count, bid, bidding_steps = rollout #everything is [B, ....] except bididng_steps which is [40, B, ....]
         print ("Playing phase")
-        trump = history_current_record(history).bid.rank.argmax(axis=-1)
         traj_tricks, traj_records = game_rollout(all_game_params,
                                                  permutation,
-                                                 hidden_states,
-                                                 trump, history, initial_player,hands,
+                                                 hidden_states, 
+                                                 bid, hands,
                                                  trick_seed)
 
         return traj_tricks, bidding_steps, traj_records
