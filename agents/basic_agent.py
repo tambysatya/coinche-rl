@@ -11,7 +11,7 @@ class BasicAgent (nnx.Module):
         self.mlp = MLP(in_feats, hid_feats, out_feats, rngs, n_hid=n_hid)
 
     @nnx.jit
-    def __call__ (self, obs): 
+    def __call__ (self,bid, obs): 
         x = jnp.concat([obs.trick.hands.reshape([-1,32])], axis=1) #DUMMY TODO
         return self.mlp(x), obs.hidden_state
 

@@ -16,7 +16,6 @@ Score = Int [Array, "B"]
 @struct.dataclass
 class Observation:
     """ Synthesis of the observations of a trick """
-    bid : BidHistory
     trick : TrickObs # actual trick, with only the hand of the current player
     hidden_state : jax.Array # user-defined datastructure that is both used and produced by the policy/value network to augment the data
 
@@ -41,13 +40,13 @@ def mk_step(policy_model):
               key):
         """ The current player plays a card """
 
-        obs = Observation(bid, trick_history_obs(trick), hidden_state)
+        obs = Observation(trick_history_obs(trick), hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trick)
         action_mask = legal_moves.reshape([-1,32])
 
-        logits, next_hidden_state = policy(obs)
+        logits, next_hidden_state = policy(bid, obs)
 
         logits = jnp.where(action_mask,
                            logits,

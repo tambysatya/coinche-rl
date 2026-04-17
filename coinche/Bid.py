@@ -57,6 +57,7 @@ def record_to_tensor (rec : BidRecord):
                             rec.coinched,
                             rec.overcoinched],axis=-1)
 
+@jax.jit
 def history_to_tensor (history : BidHistory):
     entries = history.entries # B 10 BidRecord
     
@@ -71,13 +72,16 @@ def history_to_tensor (history : BidHistory):
 #--------------------* Predicate on history *----------------------#
 # TODO not tested: not used
 
+@jax.jit
 def history_is_empty (history : BidHistory) -> Bool [Array, "B"]:
     return history.index == 0
+@jax.jit
 def history_can_raise (history : BidHistory) -> Bool [Array, "B"]:
     rec = bid_history_current_record(history)
     is_all_in = rec.action.rank[:,-1] 
     is_coinched = rec.coinched.any(axis=-1)
     return is_all_in | is_coinched
+@jax.jit
 def history_is_bidding_done (history : BidHistory) -> Bool [Array, "B"]:
     rec = bid_history_current_record(history)
     everyone_pass = rec.passed.all(axis=-1)

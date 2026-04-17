@@ -39,16 +39,18 @@ def mk_rollout(bid_policy, game_policy, pool_size):
                                initial_player,
                                bid_seed)
 
-        print ("Bidding phase")
         hidden_states, bidding_count, bid, bidding_steps = rollout #everything is [B, ....] except bididng_steps which is [40, B, ....]
-        print ("Playing phase")
+    
+        print ("trick")
         traj_tricks, traj_steps = game_rollout(all_game_params,
                                                permutation,
                                                hidden_states, 
                                                bid, hands,
                                                trick_seed)
 
-        bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
+        print (traj_steps, traj_tricks, hidden_states, bidding_count, bidding_steps)
+        print ("done")
+        #bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
         return traj_tricks, bidding_steps, traj_steps
     return jax.jit(rollout)
 

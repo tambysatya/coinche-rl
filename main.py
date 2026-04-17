@@ -29,6 +29,7 @@ def generate_actor_pool (pool_size, model):
     pool = [nnx.state(model) for i in range (pool_size)]
     return jtu.tree_map(lambda *f: jnp.stack(f), *pool)
 
+@partial(jax.jit, static_argnames=["pool_size", "game_per_pair"])
 def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
     all_bid_params = generate_actor_pool(pool_size, model=bid_policy_mdl)
     all_game_params = generate_actor_pool(pool_size, model=game_policy_mdl)
@@ -41,16 +42,19 @@ def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
     initial_player = jnp.zeros([batch_size], dtype=int)
 
     rollout = mk_rollout(bid_policy_mdl, game_policy_mdl, pool_size)
-    return rollout(all_bid_params, all_game_params,
-                   permutation, hidden_states,
-                   initial_player,
-                   seed)
+    print ("Let's go")
+    ret = rollout(all_bid_params, all_game_params,
+                  permutation, hidden_states,
+                  initial_player,
+                  seed)
+    traj_tricks, bidding_steps, traj_steps = ret
+    return ret
 
 
 
 @partial(jax.jit, static_argnames=["batch_size", "pool_size"])
 def test(batch_size=4, pool_size=2, seed=seed):
-    rollout_full = mk_rollout(policy_mdl, pool_size)
+    rollout_full = mk_rollout(bid_policy_mdl, pool_size)
     #rollout = mk_trick_rollout(policy_mdl, pool_size)
     #step = mk_step(policy_mdl)
     #league_step = mk_league_step(policy_mdl, pool_size)
