@@ -12,10 +12,11 @@ from coinche.Trick import *
 # TODO: encode ALL_TRUMPS (trivial) and NO_TRUMP
 
 @jax.jit
-def possible_moves (trump,
-                    trick : Trick) -> Hand:
-    player = trick.current_player
-    hand = jax.vmap(lambda hand, p: hand[p])(trick.hands, player)
+def possible_moves (history: TrickHistory) -> Hand:
+    trump = history.trump
+    trick = database_get(history.tricks, history.index)
+    player = history.current_player
+    hand = jax.vmap(lambda hand, p: hand[p])(history.hands, player)
     trump_trick_p = trick.suit == trump
     #print (f"trump_trick_p={trump_trick_p}")
     possible_plays = jnp.where(trump_trick_p[:,None,None],
@@ -58,9 +59,9 @@ def possible_moves_on_color_trick (trump : Suit, trick : Trick, player, hand : H
        trumps = sh_get_suit(trump, hand)
        has_trumps_p = jnp.any(trumps, axis=(1,2))
 
-       has_to_ovetrump_p = trick_cut_p & jnp.any(overtrumps, axis=(1,2))
+       has_to_overtrump_p = trick_cut_p & jnp.any(overtrumps, axis=(1,2))
        #print (f"trick_cut_p={trick_cut_p} has_trumps_p={has_trumps_p} has_suit_p={has_suit_p} has_to_ovetrump_p={has_to_ovetrump_p}")
-       return jnp.where (has_to_ovetrump_p[:,None,None],
+       return jnp.where (has_to_overtrump_p[:,None,None],
                          overtrumps,
                          jnp.where(trick_cut_p[:,None,None],
                                    hand, #cannot play the suit and cannot overtrump => subway rule

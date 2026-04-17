@@ -24,6 +24,7 @@ class BidObs:
 class BidStep:
     """ Experience collected during the rollouts """
     obs : BidObs
+    agent : Int [Array, "B"] # Agent indice
     action : Bid
     logprobs : Float [Array, "B"]
     is_masked : Bool [Array, "B"] # If set to true, this step should not be used for training 
@@ -85,11 +86,15 @@ def mk_bid_scan(bidding_model, pool_size):
          #extracts the hand and the hidden state of the current player, as well as the permutation (~ the index of the agent playing its team)
          player_hand, player_hidden, permutation = jax.vmap(lambda h,hid,p, per: (h[p], hid[p], per[p%2]))(hands, hidden_states, current_player, permutation)
 
+
          # regroup by agent [P, B/P, ...] then evaluates the batch before restoring the original order
          dataset = group_dataset_by_agent(pool_size, permutation,
                                     (current_player, player_hand, player_hidden, bidding_count, history))
 
-         play = jax.vmap(predict_bid)(all_params, rnd.split(key, pool_size), *dataset)
+         play = jax.vmap(predict_bid)(all_params,
+                                      rnd.split(key, pool_size),
+                                      jnp.arange(pool_size),
+                                      *dataset)
          _player_hidden, _bidding_count, _history, _step = play
          player_hidden, bidding_count, history, step = ungroup_dataset_by_agent(permutation, play)
 
@@ -110,6 +115,7 @@ def mk_predict_bid(bidding_model, pool_size):
 
     def predict_bid (param,
                      key,
+                     agent_indice : Int, 
                      current_player : Int [Array, "B"],
                      player_hand : Hand,
                      hidden_state,
@@ -118,13 +124,14 @@ def mk_predict_bid(bidding_model, pool_size):
                      ):
         """ Infers a bid through the policy network."""
 
+
         batch_size = current_player.shape[0]
         obs = BidObs (hidden_state, history, player_hand)
         bid_policy = nnx.merge(graphdef, param)
         output, new_hidden_state = bid_policy(obs)
         logit_pass, logit_suit, logit_rank = output
 
-        rec = history_current_record(history)
+        rec = bid_history_current_record(history)
 
 
         # If a bid have been placed, all possible bids have a higher rank
@@ -180,6 +187,7 @@ def mk_predict_bid(bidding_model, pool_size):
                 bidding_count,
                 new_history,
                 BidStep(obs,
+                        jnp.full(batch_size, agent_indice),
                         action,
                         jnp.where (no_raise_p,
                                    jnp.zeros(batch_size), # log(p=1), no choice

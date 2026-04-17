@@ -16,10 +16,8 @@ Score = Int [Array, "B"]
 @struct.dataclass
 class Observation:
     """ Synthesis of the observations of a trick """
-    history : BidHistory
-    trick : jax.Array # actual trick, with only the hand of the current player
-    current_score : Score  # current score of the team
-    total_score : Score # sum of the cards played so far
+    bid : BidHistory
+    trick : TrickObs # actual trick, with only the hand of the current player
     hidden_state : jax.Array # user-defined datastructure that is both used and produced by the policy/value network to augment the data
 
 @struct.dataclass
@@ -39,19 +37,17 @@ def mk_step(policy_model):
 
     def step (agent_index,  # current agent index : Int
               params, hidden_state,
-              trump : Suit, history : BidHistory, trick : Trick,
-              current_score,total_score, 
+              bid : BidHistory, trick : TrickHistory,
               key):
         """ The current player plays a card """
 
-        batch_size = trump.shape[0]
-        obs = Observation(history, trick_obs(trick), current_score, total_score, hidden_state)
+        obs = Observation(bid, trick_history_obs(trick), hidden_state)
         policy = nnx.merge(graphdef, params)
 
-        legal_moves = possible_moves(trump, trick)
+        legal_moves = possible_moves(trick)
         action_mask = legal_moves.reshape([-1,32])
 
-        logits, next_hidden_state = policy(trump, obs)
+        logits, next_hidden_state = policy(obs)
 
         logits = jnp.where(action_mask,
                            logits,
@@ -61,11 +57,12 @@ def mk_step(policy_model):
 
         probas = jax.vmap(lambda p, a: p[a])(jax.nn.softmax(logits), action)
 
+        batch_size = action.shape[0]
         record = Step(obs,
                       jnp.tile (agent_index, (batch_size, 1)), #also store the index of the agent who plays (same agent for the entire batch)
                       action, action_mask, jnp.log(probas))
 
-        return (next_hidden_state, play(trump, trick, card)), record
+        return (next_hidden_state, play(trick, card)), record
 
     return jax.jit(step)
 
@@ -77,23 +74,16 @@ def mk_league_step (policy_model, pool_size):
     def step (all_params, # [P, Params]
               permutation : Int [Array, "B"], # [B] : index of the agent that plays this turn
               hidden_state, #[B, ...] hidden state of the agent
-              trump : Suit, history : BidHistory, trick : Trick, current_score, total_score,
+              history : BidHistory, trick : TrickHistory, 
               key):
         
-        batch_size = trump.shape[0]
-        batch_per_agent = group_dataset_by_agent(pool_size, permutation, (hidden_state, trump, history, trick, current_score, total_score))
-       ## batch_per_agent = jtu.tree_map(
-       ##                           lambda l : l[permutation].reshape(pool_size, batch_size // pool_size, *(l.shape[1:])),
-       ##                           (hidden_state, trump, trick, current_score, total_score))
+        batch_per_agent = group_dataset_by_agent(pool_size, permutation, (hidden_state, history, trick))
+        hidden_state, history, trick = batch_per_agent # [(P, B, ...)]
 
-        hidden_state, trump, history, trick, current_score, total_score = batch_per_agent # [(P, B, ...)]
         ret, record = jax.vmap(agent_step)(
                 jnp.arange(pool_size), all_params,
-                hidden_state, trump, history, trick, current_score, total_score, rnd.split(key,pool_size))
+                hidden_state, history, trick, rnd.split(key,pool_size))
 
-        #ret, record = jtu.tree_map(
-        #                    lambda l : (l.reshape(batch_size, *(l.shape[2:])).squeeze())[permutation],
-        #                    (ret, record))
         ret, record = ungroup_dataset_by_agent(permutation, (ret,record))
 
         return ret, record
@@ -109,26 +99,21 @@ def mk_trick_rollout (policy_model, pool_size):
     def trick_rollout (all_params,
                        permutations: Int [Array, "B 2"], # permutation describing which agents plays Team0 and Team1
                        initial_hidden, #  [B, 4, ...] previous hidden state for each player
-                       trump : Suit,
-                       history : BidHistory,
-                       team_score, # [score_team_0, score_team_1]
-                       total_score,
-                       initial_player : Player, hands : Hand,
+                       bid : BidHistory,
+                       trick : TrickHistory,
                        seed) -> Trick:
-        trick = new_trick(initial_player, hands)
-        
+
 
 
         def scan_step (carry, step_seed):
             all_hidden, prev_trick = carry
             cur_team = prev_trick.current_player % 2
-            player_score, player_permutation = jax.vmap(lambda s, a, p: (s[p], a[p]))(team_score, permutations, cur_team) # extracts the scores and index of the current player
+            player_permutation = jax.vmap(lambda a, p: a[p])(permutations, cur_team) # extracts the scores and index of the current player
             player_hidden = jax.vmap(lambda h, p: h[p])(all_hidden, prev_trick.current_player) #extracts the hidden state of the current player
 
             (new_hidden, new_trick), new_record = step(all_params, player_permutation,
                                                        player_hidden,
-                                                       trump, history, prev_trick,
-                                                       player_score, total_score,
+                                                       bid, prev_trick,
                                                        step_seed)
             new_hidden = jax.vmap(lambda a, h, p: a.at[p].set(h))(all_hidden, new_hidden, prev_trick.current_player) #updates the hidden state of the playing agent
             return (new_hidden, new_trick) , new_record
@@ -148,7 +133,7 @@ def mk_game_rollout (policy_model, pool_size):
     def rollout (all_params, # Params of each agent of the pool: [P, ...]
                  permutations : Int [Array, "B 2"], # Pair of agent for each game
                  initial_hidden_state, # [B, 4, ...] hidden state of each player, for each game
-                 trump : Suit, history : BidHistory, initial_player : Player, initial_hands : Hand,
+                 bid : BidHistory, initial_hands : Hand,
                  seed):
         """ Simulates a complete trick phase (8 tricks):
                 input : - parameters of the each policy network
@@ -161,36 +146,22 @@ def mk_game_rollout (policy_model, pool_size):
                     - complete tricks : [8 x batch_size]
                     - observations records : [8 x 4 x batch_size]
         """
-        batch_size = trump.shape[0]
-        initial_scores = jnp.zeros([batch_size,2])
-        initial_total_score = jnp.zeros([batch_size])
-        initial_trick = new_trick (initial_player, initial_hands)
-
-
+        
+        trick = trick_history_initialize(bid, initial_hands)
 
         def scan_step (carry, trick_seed):
-            prev_hidden, prev_trick, prev_scores, prev_total_score = carry 
+            prev_hidden, prev_trick = carry 
             (next_hidden, finished_trick), trajectory_records = trick_rollout (
                                                                   all_params, permutations,
                                                                   prev_hidden,
-                                                                  trump, history,
-                                                                  prev_scores, #score of both teams
-                                                                  prev_total_score,
-                                                                  prev_trick.best_player,
-                                                                  prev_trick.hands,
+                                                                  bid, prev_trick,
                                                                   trick_seed)
-            #update the team scores according to which team won the trick
-            new_score = jnp.where((finished_trick.best_player % 2 == 0)[:,None],
-                                  prev_scores.at[:,0].add(finished_trick.value),
-                                  prev_scores.at[:,1].add(finished_trick.value))
-            total_score = prev_total_score + finished_trick.value
 
-
-            return (next_hidden, finished_trick, new_score, total_score), (finished_trick, trajectory_records)
+            return (next_hidden, finished_trick), (finished_trick, trajectory_records)
 
         
 
-        (final_trick, final_record, _, _), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, initial_trick, initial_scores, initial_total_score), rnd.split(seed, 8))
+        (final_trick, final_record), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, trick), rnd.split(seed, 8))
         return traj_trick, traj_records
 
     return jax.jit(rollout)

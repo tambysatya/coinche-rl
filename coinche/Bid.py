@@ -74,12 +74,12 @@ def history_to_tensor (history : BidHistory):
 def history_is_empty (history : BidHistory) -> Bool [Array, "B"]:
     return history.index == 0
 def history_can_raise (history : BidHistory) -> Bool [Array, "B"]:
-    rec = history_current_record(history)
+    rec = bid_history_current_record(history)
     is_all_in = rec.action.rank[:,-1] 
     is_coinched = rec.coinched.any(axis=-1)
     return is_all_in | is_coinched
 def history_is_bidding_done (history : BidHistory) -> Bool [Array, "B"]:
-    rec = history_current_record(history)
+    rec = bid_history_current_record(history)
     everyone_pass = rec.passed.all(axis=-1)
     overcoinched = rec.overcoinched.any(axis=-1)
     return everyone_pass | overcoinched
@@ -88,13 +88,13 @@ def history_is_bidding_done (history : BidHistory) -> Bool [Array, "B"]:
 
 # -------------------* Actions on history *------------------------#
 @jax.jit
-def history_current_record (history : BidHistory) -> BidRecord:
+def bid_history_current_record (history : BidHistory) -> BidRecord:
     return database_get(history.entries,history.index)
 @jax.jit
 def history_player_pass (history : BidHistory,
                          player : Int [Array, "B"]) -> BidHistory:
     """ Modifies the current bid to specify that the specified player passed"""
-    rec = history_current_record(history)
+    rec = bid_history_current_record(history)
     rec = rec.replace(passed = database_set(
                                    rec.passed, jnp.ones_like(player, dtype=bool), player))
     new_entries = database_set(history.entries, rec, history.index)
