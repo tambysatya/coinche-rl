@@ -21,6 +21,12 @@ def mk_rollout(bid_policy, game_policy, pool_size):
                 hidden_states,
                 initial_player,
                 seed):
+        """ Simulates an entire game:
+                output:
+                    - traj_tricks : completes tricks where all 4 people played : [8 x batch_size]
+                    - bidding_steps : bidding observations of all players [10 x 4 x batch_size]
+                    - trick_steps : observations of all players during the trick plays [8 x 4 x batch_size]
+        """
         batch_size = initial_player.shape[0]
 
         deal_seed, bid_seed, trick_seed = rnd.split(seed, 3)
@@ -36,13 +42,14 @@ def mk_rollout(bid_policy, game_policy, pool_size):
         print ("Bidding phase")
         hidden_states, bidding_count, bid, bidding_steps = rollout #everything is [B, ....] except bididng_steps which is [40, B, ....]
         print ("Playing phase")
-        traj_tricks, traj_records = game_rollout(all_game_params,
-                                                 permutation,
-                                                 hidden_states, 
-                                                 bid, hands,
-                                                 trick_seed)
+        traj_tricks, traj_steps = game_rollout(all_game_params,
+                                               permutation,
+                                               hidden_states, 
+                                               bid, hands,
+                                               trick_seed)
 
-        return traj_tricks, bidding_steps, traj_records
+        bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
+        return traj_tricks, bidding_steps, traj_steps
     return jax.jit(rollout)
 
                          

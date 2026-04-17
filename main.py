@@ -36,9 +36,7 @@ def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
 
     agent_indices = jnp.indices((pool_size, pool_size)).T
     agent_indices = jnp.tile(agent_indices,(1,1,game_per_pair)).reshape([batch_size,2])
-    permutation = agent_indices.argsort(axis=1)
-
-
+    permutation = build_permutation(agent_indices)
     hidden_states = jnp.zeros([batch_size,4,3]) # 4 hidden states per game
     initial_player = jnp.zeros([batch_size], dtype=int)
 

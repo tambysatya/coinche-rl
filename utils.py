@@ -30,6 +30,15 @@ def mk_minibatches (tensor, batch_size):
     return tensor
 
 
+@jax.jit
+def build_permutation(agent_pairs : Int [Array, "B 2"]) -> Int [Array, "B 2"]:
+    """ Given a tensor of pairs of agents, returns the permuation that must be passed to the batch league rollout methods """
+    sort0, sort1 = agent_pairs[:,0].argsort(), agent_pairs[:,1].argsort()
+    permutation = jnp.concatenate([sort0[:,None], sort1[:,None]], axis=1)
+    return permutation
+
+
+
 @partial(jax.jit, static_argnames=['pool_size'])
 def group_dataset_by_agent(pool_size,
                            permutation : Int [Array, "B"],
