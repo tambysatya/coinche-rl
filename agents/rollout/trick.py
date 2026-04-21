@@ -16,11 +16,12 @@ Score = Int [Array, "B"]
 @struct.dataclass
 class Observation:
     """ Synthesis of the observations of a trick """
+    bid : BidHistory
     trick : TrickObs # actual trick, with only the hand of the current player
     hidden_state : jax.Array # user-defined datastructure that is both used and produced by the policy/value network to augment the data
 
 @struct.dataclass
-class Step:
+class TrickStep:
     # Inputs of the policy network
     obs : Observation # observation of the state 
     #Action 
@@ -40,7 +41,7 @@ def mk_step(policy_model):
               key):
         """ The current player plays a card """
 
-        obs = Observation(trick_history_obs(trick), hidden_state)
+        obs = Observation(bid, trick_history_obs(trick), hidden_state)
         policy = nnx.merge(graphdef, params)
 
         legal_moves = possible_moves(trick)
@@ -57,9 +58,9 @@ def mk_step(policy_model):
         probas = jax.vmap(lambda p, a: p[a])(jax.nn.softmax(logits), action)
 
         batch_size = action.shape[0]
-        record = Step(obs,
-                      jnp.tile (agent_index, (batch_size, 1)), #also store the index of the agent who plays (same agent for the entire batch)
-                      action, action_mask, jnp.log(probas))
+        record = TrickStep(obs,
+                           jnp.tile (agent_index, (batch_size, 1)), #also store the index of the agent who plays (same agent for the entire batch)
+                           action, action_mask, jnp.log(probas))
 
         return (next_hidden_state, play(trick, card)), record
 
@@ -169,8 +170,8 @@ def mk_game_rollout (policy_model, pool_size):
 @jax.jit
 def transition_rewards (trump : Suit, # [batch_size]
                         traj_trick : Trick, # [8, batch_size]
-                        traj_records : Step): # [8, 4, batch_size]
-    """ Generates a batch of example (Step, TransitionReward), both are of shape [8, 4, batch_size]"""
+                        traj_records : TrickStep): # [8, 4, batch_size]
+    """ Generates a batch of example (TrickStep, TransitionReward), both are of shape [8, 4, batch_size]"""
 
     batch_size = trump.shape[0]
     # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)

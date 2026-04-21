@@ -9,6 +9,7 @@ from agents.rollout.bid import *
 from agents.rollout.game import *
 from agents.basic_agent import *
 from agents.train import *
+from agents.rollout.reward import *
 
 import jax.random as rnd
 import flax.nnx as nnx
@@ -48,6 +49,8 @@ def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
                   initial_player,
                   seed)
     traj_tricks, bidding_steps, traj_steps = ret
+    compute_rewards = mk_compute_rewards(pool_size)
+    ret = compute_rewards(permutation[:,0], 0.99, traj_tricks, bidding_steps, traj_steps)
     return ret
 
 
