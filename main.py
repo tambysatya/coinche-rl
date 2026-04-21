@@ -78,16 +78,17 @@ def test(batch_size=4, pool_size=2, seed=seed):
     return rollout_full(initial_params, permutations, initial_hidden_state, trumps, initial_players, initial_hands, seed)
 
 
-def statistics (batch_size, pool_size, n_epoch, seed=seed):
+def statistics (game_per_pair, pool_size, n_epoch, seed=seed):
     total_sum = 0
     for _ in tqdm(range(n_epoch)):
         seed, key = rnd.split(seed)
         start = time()
-        test(batch_size=batch_size, pool_size=pool_size, seed=key)
+        #test(batch_size=batch_size, pool_size=pool_size, seed=key)
+        traj_tricks, bidding_steps, traj_steps = test_game_rollout(pool_size=pool_size, game_per_pair=game_per_pair, seed=key)
         stop = time()
         total_sum += stop-start
 
-    print(f"{n_epoch}*{batch_size}: total={total_sum} avg={total_sum/n_epoch}")
+    print(f"{n_epoch}*{game_per_pair*pool_size**2}: total={total_sum} avg={total_sum/n_epoch}")
 
 def dbg_scan(batch_size=1, seed=seed):
     step = mk_step(policy_mdl)
