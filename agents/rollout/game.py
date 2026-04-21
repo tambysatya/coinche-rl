@@ -47,8 +47,7 @@ def mk_rollout(bid_policy, game_policy, pool_size):
                                                bid, hands,
                                                trick_seed)
 
-        print (traj_steps, traj_tricks, hidden_states, bidding_count, bidding_steps)
-        #bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
+        bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
         return traj_tricks, bidding_steps, traj_steps
     return jax.jit(rollout)
 
