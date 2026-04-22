@@ -163,6 +163,10 @@ def trick_history_initialize (history : BidHistory, hands : Hand):
                 replicate_8,
                 tricks)
     
+   # If the chosen suit is not SUIT_ALL_TRUMP, the last trick amounts 10 more (so its initial value is equal to 10)
+   tricks_value = jax.vmap(lambda val,t : val.at[-1].add(10*(t != SUIT_ALL_TRUMP)))(tricks.value, trump)
+   tricks = tricks.replace(value = tricks_value)
+
    team_scores = jnp.zeros([batch_size,2])
    total_score = jnp.zeros([batch_size])
 
