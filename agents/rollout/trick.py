@@ -167,35 +167,35 @@ def mk_game_rollout (policy_model, pool_size):
     return jax.jit(rollout)
 
 
-@jax.jit
-def transition_rewards (trump : Suit, # [batch_size]
-                        traj_trick : Trick, # [8, batch_size]
-                        traj_records : TrickStep): # [8, 4, batch_size]
-    """ Generates a batch of example (TrickStep, TransitionReward), both are of shape [8, 4, batch_size]"""
-
-    batch_size = trump.shape[0]
-    # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
-    has_10_der_p = ~(trump == SUIT_ALL_TRUMP)
-    bonus = has_10_der_p*10 
-    values = traj_trick.value.at[-1,:].add(bonus) # [8, batch_size]
-    winners = traj_trick.best_player % 2 # [8, batch_size]
-
-    
-    player_indices = jnp.arange(4)[None,:,None]
-    player_indices = jnp.tile(player_indices, (8, 1, batch_size)) #(8,4,batch_size) => player_indices[a][b] = [b,b,b,...,b] for each item of the batch
-    winners = jnp.tile(winners[:,None,:], (1,4,1)) # (8, 4, batch_size)
-    values = jnp.tile(values[:,None,:], (1,4,1)) # (8, 4, batch_size)
-
-    transition_rewards = jnp.where(player_indices % 2 == winners, values, 0) # (8, 4, batch_size)
-
-    # generates the dataset 
-    #rewards = rewards.flatten() # [B*32, 1]
-    #traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
-
-
-
-    return transition_rewards
-
+#@jax.jit
+#def transition_rewards (trump : Suit, # [batch_size]
+#                        traj_trick : Trick, # [8, batch_size]
+#                        traj_records : TrickStep): # [8, 4, batch_size]
+#    """ Generates a batch of example (TrickStep, TransitionReward), both are of shape [8, 4, batch_size]"""
+#
+#    batch_size = trump.shape[0]
+#    # adding the 10 de der (last trick amounts 10 additional points, except in ALL_TRUMP)
+#    has_10_der_p = ~(trump == SUIT_ALL_TRUMP)
+#    bonus = has_10_der_p*10 
+#    values = traj_trick.value.at[-1,:].add(bonus) # [8, batch_size]
+#    winners = traj_trick.best_player % 2 # [8, batch_size]
+#
+#    
+#    player_indices = jnp.arange(4)[None,:,None]
+#    player_indices = jnp.tile(player_indices, (8, 1, batch_size)) #(8,4,batch_size) => player_indices[a][b] = [b,b,b,...,b] for each item of the batch
+#    winners = jnp.tile(winners[:,None,:], (1,4,1)) # (8, 4, batch_size)
+#    values = jnp.tile(values[:,None,:], (1,4,1)) # (8, 4, batch_size)
+#
+#    transition_rewards = jnp.where(player_indices % 2 == winners, values, 0) # (8, 4, batch_size)
+#
+#    # generates the dataset 
+#    #rewards = rewards.flatten() # [B*32, 1]
+#    #traj_records = jtu.tree_map(lambda l: l.reshape([batch_size*8*4,-1]),traj_records) #[B*32,...]
+#
+#
+#
+#    return transition_rewards
+#
 
 @jax.jit
 def cumulative_rewards (transition_rewards, # [8, 4, batch_size]
