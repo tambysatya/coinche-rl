@@ -58,7 +58,7 @@ def play (history : TrickHistory,
         Modifies the current trick in the history by inserting the card played by a player
     """
 
-    trumps = history.trump.argmax(axis=-1)
+    trumps = history.trump
     tricks = database_get(history.tricks, history.index)
     players = history.current_player
 

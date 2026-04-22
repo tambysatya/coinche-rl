@@ -17,8 +17,8 @@ trump_values = jnp.array([20,14,11,10,4,3,0,0])
 no_trump_values = jnp.array([20,10,4,3,2,0,0,0])
 all_trump_values = trump_values*162/248 #TODO
 
-SUIT_ALL_TRUMP=5
-SUIT_NO_TRUMP=6
+SUIT_ALL_TRUMP=4
+SUIT_NO_TRUMP=5
 
 @struct.dataclass
 class Card:

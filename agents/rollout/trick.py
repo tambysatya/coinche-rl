@@ -27,7 +27,7 @@ class TrickStep:
     #Action 
     agent : Int [Array, "B"] #agent index
     action : Int [Array, "B"] #chosen card
-    action_mask : Bool [Array, "B 32"]
+    action_mask : Bool [Array, "B "]
     logprobs : jax.Array #log-probability of the chosen action
 
 
@@ -151,18 +151,18 @@ def mk_game_rollout (policy_model, pool_size):
 
         def scan_step (carry, trick_seed):
             prev_hidden, prev_trick = carry 
-            (next_hidden, finished_trick), trajectory_records = trick_rollout (
-                                                                  all_params, permutations,
-                                                                  prev_hidden,
-                                                                  bid, prev_trick,
-                                                                  trick_seed)
-
-            return (next_hidden, finished_trick), (finished_trick, trajectory_records)
+            (next_hidden, finished_history), trajectory_records = trick_rollout (
+                                                                          all_params, permutations,
+                                                                          prev_hidden,
+                                                                          bid, prev_trick,
+                                                                          trick_seed)
+            last_trick = database_get(finished_history.tricks, finished_history.index)
+            return (next_hidden, finished_history), (last_trick, trajectory_records)
 
         
 
-        (final_trick, final_record), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, trick), rnd.split(seed, 8))
-        return traj_trick, traj_records
+        (final_hidden, final_history), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, trick), rnd.split(seed, 8))
+        return final_history, traj_trick, traj_records
 
     return jax.jit(rollout)
 
