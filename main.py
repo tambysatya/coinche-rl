@@ -48,8 +48,8 @@ def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
                   permutation, hidden_states,
                   initial_player,
                   seed)
-    bid, final_trick_history, traj_tricks, bidding_steps, traj_steps = ret
-    scores = compute_transition_rewards(0.99, bid, final_trick_history, traj_tricks, bidding_steps, traj_steps)
+    bid, final_trick_history, traj_tricks, bidding_steps, traj_steps, traj_trick_history = ret
+    scores = compute_final_scores(bid, final_trick_history, traj_tricks)
     return ret, scores
 
 

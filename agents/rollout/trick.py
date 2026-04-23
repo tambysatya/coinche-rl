@@ -140,8 +140,10 @@ def mk_game_rollout (policy_model, pool_size):
                         - sorted permutation of indices describing which agent plays on each game (obtained by argsorting the indices of which agent play each team of each game)
                         - batch of 4 user-defined hidden_state, also passed to the policy network
                         - initial conditions of the game: trump suit, starting player, and cards distributions
-                returns: - the complete tricks among the trajectory: it is the resulting trick where all 4 players played a card
+                returns: - the final trickhistory (i.e. game state) at the end of 8 tricks
+                         - the complete tricks among the trajectory: each one is the resulting trick where all 4 players played a card
                          - the observations records among the trajectory (4 per trick)
+                         - the 8 final trick_history, i.e. the game states at the end of each 8 tricks
                 Dimension:
                     - complete tricks : [8 x batch_size]
                     - observations records : [8 x 4 x batch_size]
@@ -152,17 +154,17 @@ def mk_game_rollout (policy_model, pool_size):
         def scan_step (carry, trick_seed):
             prev_hidden, prev_trick = carry 
             (next_hidden, finished_history), trajectory_records = trick_rollout (
-                                                                          all_params, permutations,
-                                                                          prev_hidden,
-                                                                          bid, prev_trick,
-                                                                          trick_seed)
+                                                                                  all_params, permutations,
+                                                                                  prev_hidden,
+                                                                                  bid, prev_trick,
+                                                                                  trick_seed)
             last_trick = database_get(finished_history.tricks, finished_history.index)
-            return (next_hidden, finished_history), (last_trick, trajectory_records)
+            return (next_hidden, finished_history), (last_trick, trajectory_records, finished_history)
 
         
 
-        (final_hidden, final_history), (traj_trick, traj_records) = jax.lax.scan(scan_step,  (initial_hidden_state, trick), rnd.split(seed, 8))
-        return final_history, traj_trick, traj_records
+        (final_hidden, final_trick_history), (traj_trick, traj_records, traj_trick_history) = jax.lax.scan(scan_step,  (initial_hidden_state, trick), rnd.split(seed, 8))
+        return final_trick_history, traj_trick, traj_records, traj_trick_history
 
     return jax.jit(rollout)
 

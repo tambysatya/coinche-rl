@@ -28,6 +28,7 @@ def mk_rollout(bid_policy, game_policy, pool_size):
                     - traj_tricks : completes tricks where all 4 people played : [8 x batch_size]
                     - bidding_steps : bidding observations of all players [10 x 4 x batch_size]
                     - trick_steps : observations of all players during the trick plays [8 x 4 x batch_size]
+                    - traj_trick_history: gamestate at the end of each 8 tricks [8 x batch_size]
         """
         batch_size = initial_player.shape[0]
 
@@ -43,14 +44,14 @@ def mk_rollout(bid_policy, game_policy, pool_size):
 
         hidden_states, bidding_count, bid, bidding_steps = rollout #everything is [B, ....] except bididng_steps which is [40, B, ....]
     
-        final_trick_history, traj_tricks,  traj_steps = game_rollout(all_game_params,
-                                                                     permutation,
-                                                                     hidden_states, 
-                                                                     bid, hands,
-                                                                     trick_seed)
+        final_trick_history, traj_tricks, traj_steps, traj_trick_history = game_rollout(all_game_params,
+                                                                                 permutation,
+                                                                                 hidden_states, 
+                                                                                 bid, hands,
+                                                                                 trick_seed)
 
         bidding_steps = jtu.tree_map(lambda l: l.reshape(10,4,*l.shape[1:]), bidding_steps)
-        return bid_history_current_record(bid), final_trick_history, traj_tricks, bidding_steps, traj_steps
+        return bid_history_current_record(bid), final_trick_history, traj_tricks, bidding_steps, traj_steps, traj_trick_history
     return jax.jit(rollout)
 
                          
