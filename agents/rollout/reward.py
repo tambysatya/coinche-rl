@@ -13,22 +13,37 @@ from coinche.Card import *
 from agents.rollout.game import *
 
 
-def compute_transition_rewards (final_scores : Float [Array, "B 2"],
+@jax.jit
+def compute_transition_bid_reward(bid_steps : BidStep ): #bid_steps: [10, 4, B]
+    """
+        Bidding increases the risks, so the signal consists in a short-term negative reward that can lead to a bonus at the end of the game. If the current bidding value is equal to N, the *cumulative reward of the bidding team until this step* is equal to -N, and the *cumulative reward of the defending team* is eequal to 0 e.g.:
+        - You bid 80 but your opponent raised to 90: reward of your team is 0, reward of other team is -90
+        - You bid 80 and your teamate raised to 90: reward of your team is -90
+        - You bid 80 but your opponent raised to 90. Your reward is 0. Now you raise to 100: reward is -100
+        - You bid 80, everyone passed: reward is -80. You raise on yourself to 90: new reward is -10
 
-                                traj_trick_history : TrickHistory, # 8, B : Final history at the end of each trick
+    """
+    batch_size = bid_steps.agent.shape[-1]
 
-                                bid_steps ):
-    
-    def compute_bid_rewards():
-        # if you bid N you lose N. If the adversary team rise above you, you earn +N (i.e. the cumulative score of all previous bid is now equal to zero)
+    def step(carry, bid_step): # bid_step : [4 x B]
+        old_scores, old_ranks = carry #old_scores : [4 x B] 
+        rec = nnx.vmap(bid_history_current_record)(bid_step.obs.history)
+        actual_rank = rec.bid.rank.argmax(axis=-1) # 4 x B
+        actual_score = actual_rank*10 + 80
+        player_team_wins = (rec.author %2) == (jnp.arange(4)%2)[:,None]
 
-        def step(carry, bid_step): # bid_step : [4 x B]
-            old_scores, old_ranks = carry #old_scores : [4 x B] 
-            rec = nnx.vmap(bid_history_current_record)(bid_step.obs.history)
-            actual_rank = rec.bid.rank.argmax(axis=-1) # 4 x B
+        new_scores = jnp.where(player_team_wins,
+                               -actual_score + old_scores, # bidding decreases the reward 
+                               + old_scores) # not bidding (or gettint overbid) compensate every risk
+        return (new_scores, actual_rank), new_scores
+
+    initial_rank = jnp.full([4, batch_size], -1)
+    initial_scores = jnp.zeros_like(initial_rank)
+
+    _, bid_scores = jax.lax.scan(step, (initial_scores, initial_rank), bid_steps)
+    return bid_scores
 
 
-    pass
 
 @jax.jit
 def compute_final_scores (bid : BidRecord,
