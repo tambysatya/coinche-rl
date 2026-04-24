@@ -46,12 +46,20 @@ def compute_transition_bid_reward(bid_steps : BidStep ): #bid_steps: [10, 4, B]
 
 
 @jax.jit
-def compute_final_scores (bid : BidRecord,
+def compute_final_reward (bid : BidRecord,
                           final_hist : TrickHistory, # B : final history of each game (final_hist.index = 8)
                           tricks : Trick): # 8 B
-    """ Returns the final score of each team, depending whether the contract have been done or not """
+    """ Returns the final reward of each team:
+        - team1 win: [2*bid, 0]
+        - team1 loses: [-score+bid , 160+bid] to compensiate the bid reward
+
+        Return: [B, 2] to be added with the final trick value
+        Note: this is NOT the final score, but the reward to be added at the  end in order to have a final cumulative reward that matches the score made by each team
+    """
 
     attacker_team = bid.author % 2 # shape B
+    batch_size = attacker_team.shape[0]
+
     attacker_score = jax.vmap(lambda score, team : score[team])(final_hist.team_scores, attacker_team)
 
     contract_value = bid.bid.rank.argmax(axis=-1)*10 + 80 # shape B, between 80 and 160 (last is ALL_IN)
@@ -61,13 +69,34 @@ def compute_final_scores (bid : BidRecord,
 
     attackers_won_p = has_bet_all_in_p*has_made_all_in_p + (1-has_bet_all_in_p)*(attacker_score >= contract_value)
     # adds 250 to the attacker_score if all_in, else adds the contract value
-    attackers_won_score = jax.vmap(
-                            lambda team_scores, a_team, val, all_in_p: 
-                                   team_scores.at[a_team].add(all_in_p*250 + (1-all_in_p)*val))(final_hist.team_scores, attacker_team, contract_value, has_bet_all_in_p)
-    attackers_lose_score = jax.vmap(lambda team_scores, a_team: team_scores.at[a_team].set(0).at[~a_team].add(160))(final_hist.team_scores, attacker_team)
 
-    team_scores = jnp.where(attackers_won_p[:,None], attackers_won_score, attackers_lose_score)
-    return team_scores
+    def on_attacker_wins(team_scores, attacker_team, contract_value, has_bet_all_in_p, has_made_all_in_p):
+        # Bonus on the reward if the attacker wins
+        attacker_score = team_scores[attacker_team]
+        defenser_score = team_scores[~attacker_team]
+        compensation = contract_value # to compensiate the negative bid of the beginning
+         #attacker wins the contract value (or 250). The contract value is also added to compensate the negative reward comming from the bidding part
+        attacker_reward = (has_bet_all_in_p*(500 + compensation) + 
+                          (1-has_bet_all_in_p)*(has_made_all_in_p*(250 + contract_value + compensation) + 
+                                               (1-has_made_all_in_p)*(contract_value + compensation)))
+        team_scores = team_scores.at[attacker_team].set(attacker_reward)
+        team_scores = team_scores.at[~attacker_team].set(0) #defenser does not win anything
+        return team_scores
+
+    attackers_won_score = jax.vmap(on_attacker_wins)(final_hist.team_scores, attacker_team, contract_value, has_bet_all_in_p, has_made_all_in_p)
+
+    def on_attacker_loses(team_scores, attacker_team, contract_val):
+        # Bonus on the reward if the attacker loses
+        attacker_score = team_scores[attacker_team]
+        defenser_score = team_scores[~attacker_team]
+        team_scores = team_scores.at[attacker_team].set(-attacker_score+contract_val) #attacker cumulative sum = 0
+        team_scores = team_scores.at[~attacker_team].set(-defenser_score+contract_val+160) #defenser cumulative sum = 160+contract
+        return team_scores
+
+    attackers_lose_score = jax.vmap(on_attacker_loses)(final_hist.team_scores, attacker_team, contract_value)
+
+    final_reward = jnp.where(attackers_won_p[:,None], attackers_won_score, attackers_lose_score)
+    return final_reward
 
 
 

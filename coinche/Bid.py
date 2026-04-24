@@ -113,7 +113,7 @@ def history_player_bid (history : BidHistory,
     batch_size = player.shape[0]
     rec = BidRecord (
                Bid (jax.nn.one_hot(suit,6, dtype=bool),
-                     jax.nn.one_hot(rank,9, dtype=bool)),
+                     jax.nn.one_hot(rank,10, dtype=bool)),
                player,
                jnp.zeros([batch_size, 4], dtype=bool), # noone passed
                jnp.zeros([batch_size, 4], dtype=bool), # noone coinched
@@ -153,7 +153,7 @@ def history_initialize (dealer : Int [Array, "B"]):
     history_size = 10 # 10 possible bids max
     entries = BidRecord (
                    Bid (jnp.zeros([batch_size,history_size, 6], dtype=bool),
-                        jnp.zeros([batch_size,history_size, 9], dtype=bool)),
+                        jnp.zeros([batch_size,history_size, 10], dtype=bool)),
                    jnp.tile(dealer[:,None],(1,history_size)),
                    jnp.zeros([batch_size,history_size,4], dtype=bool),
                    jnp.zeros([batch_size,history_size,4], dtype=bool),
@@ -168,10 +168,3 @@ def bid_to_tensor (bid : Bid):
     return jnp.concatenate([bid.suit,
                             bid.rank],axis=-1)
 
-
-
-def dummy_bid():
-   return Bid (jax.nn.one_hot(jnp.array([3,1]),6, dtype=bool),
-               jax.nn.one_hot(jnp.array([2,4]), 9, dtype=bool),
-               jnp.array([3,1]),
-               jnp.zeros([2, 4], dtype=bool))

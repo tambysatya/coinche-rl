@@ -49,7 +49,7 @@ def test_game_rollout (pool_size = 2, game_per_pair=4, seed = seed):
                   initial_player,
                   seed)
     bid, final_trick_history, traj_tricks, bidding_steps, traj_steps, traj_trick_history = ret
-    scores = compute_final_scores(bid, final_trick_history, traj_tricks)
+    scores = compute_final_reward(bid, final_trick_history, traj_tricks)
     return ret, scores
 
 

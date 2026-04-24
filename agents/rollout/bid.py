@@ -137,8 +137,8 @@ def mk_predict_bid(bidding_model, pool_size):
         # If a bid have been placed, all possible bids have a higher rank
         has_someone_placed_p = history_is_empty(history)
         bid_mask = jnp.where(has_someone_placed_p[:,None],
-                             jnp.ones([batch_size,9], dtype=bool),
-                             jnp.tile(jnp.arange(9), (batch_size,1)) > rec.bid.rank.argmax(axis=-1)[:,None]) 
+                             jnp.ones([batch_size,10], dtype=bool),
+                             jnp.tile(jnp.arange(10), (batch_size,1)) > rec.bid.rank.argmax(axis=-1)[:,None]) 
         logit_rank = jnp.where(bid_mask,
                         logit_rank,
                         -jnp.inf)
@@ -160,8 +160,8 @@ def mk_predict_bid(bidding_model, pool_size):
                              jnp.zeros([batch_size,6], dtype=bool),
                              jax.nn.one_hot(suit, 6).astype(bool))
         new_rank = jnp.where(no_raise_p[:,None],
-                             jnp.zeros([batch_size,9], dtype=bool),
-                             jax.nn.one_hot(rank, 9).astype(bool))
+                             jnp.zeros([batch_size,10], dtype=bool),
+                             jax.nn.one_hot(rank, 10).astype(bool))
         action = Bid(new_suit, new_rank)
 
         logprob_pass = jnp.log(jax.nn.softmax(logit_pass))

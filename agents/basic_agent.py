@@ -30,8 +30,8 @@ class BasicCritic (nnx.Module):
 
 class BidAgent (nnx.Module):
     def __init__(self, hid_feats, rngs, n_hid = 1, uniform=False):
-        in_feats = 311 # obs tensor. Only history is taken into account, no hidden state
-        out_feats = 16
+        in_feats = 321 # obs tensor. Only history is taken into account, no hidden state
+        out_feats = 17
         self.mlp = MLP(in_feats, hid_feats, out_feats, rngs, n_hid=n_hid)
         self.uniform = uniform
 
@@ -42,7 +42,7 @@ class BidAgent (nnx.Module):
         x = self.mlp(x)
         uniform_policy=jnp.ones_like(x)
         x = self.uniform*uniform_policy + (1-self.uniform)*x
-        logit_pass, logit_suit, logit_rank = x[:,:2],x[:, 2:7],x[:, 7:16]
+        logit_pass, logit_suit, logit_rank = x[:,:2],x[:, 2:7],x[:, 7:17]
         return (logit_pass, logit_suit, logit_rank), obs.hidden_state
 
 
